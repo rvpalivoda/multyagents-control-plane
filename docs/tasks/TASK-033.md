@@ -69,4 +69,4 @@ Start with strict defaults and explicit allowlist exceptions. Keep policy evalua
     - `apps/host-runner`: `pytest -q` -> `12 passed`
   - Commits:
     - `9270ece` (`fix(task-033): stop docker container on cancel`)
-    - `<pending commit sha>`
+    - `fb4c878` (`fix(task-033): validate sandbox hardening behavior`)
