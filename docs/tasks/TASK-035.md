@@ -69,4 +69,4 @@ Execution evidence:
 - `apps/api`: `pytest -q` -> `60 passed`.
 
 Commits:
-- `<pending commit sha>`
+- `be0af21` (`feat(task-035): gate workflow dispatch by artifact handoff`)
