@@ -32,7 +32,7 @@
 - `TASK-037` (`P1`, `done`): Improve control-panel UX navigation and approvals workflow
 - `TASK-038` (`P1`, `done`): Migrate UI to Tailwind and deliver full-width modern admin layout
 - `TASK-039` (`P1`, `done`): Switch admin panel to light theme and polish readability
-- `TASK-040` (`P0`, `in_progress`): Redesign admin IA with operations dashboard and runs center split-view
+- `TASK-040` (`P0`, `done`): Redesign admin IA with operations dashboard and runs center split-view
 
 ### EPIC-3 Execution and runner
 - `TASK-007` (`P0`, `done`): Implement host runner protocol (submit/cancel/status)
