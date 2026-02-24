@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `in_progress`
+- Status: `done`
 - Priority: `P1`
 - Owner: `codex`
 - Created: `2026-02-24`
@@ -33,10 +33,10 @@ Deliver a light visual theme for the full-width Tailwind admin panel and improve
 
 ## Acceptance criteria
 
-- [ ] App uses light background with readable contrast across all sections.
-- [ ] Forms/tables/action buttons remain usable and visually consistent.
-- [ ] No behavior regressions in CRUD/run/task/approval actions.
-- [ ] UI build passes.
+- [x] App uses light background with readable contrast across all sections.
+- [x] Forms/tables/action buttons remain usable and visually consistent.
+- [x] No behavior regressions in CRUD/run/task/approval actions.
+- [x] UI build passes.
 
 ## Implementation notes
 
@@ -44,8 +44,8 @@ Perform class-token level migration first, then adjust local exceptions.
 
 ## Test plan
 
-- [ ] `cd apps/ui && npm run build`
-- [ ] Manual smoke: verify each tab remains legible and operable.
+- [x] `cd apps/ui && npm run build`
+- [x] Manual smoke: verify each tab remains legible and operable.
 
 ## Risks and mitigations
 
@@ -54,7 +54,14 @@ Perform class-token level migration first, then adjust local exceptions.
 
 ## Result
 
-To be filled after implementation.
+Updated the Tailwind admin panel to a full light theme with improved readability:
+- global shell and surface colors moved to light palette
+- form controls/tables/row hover and selected states adapted for light mode
+- JSON/debug panes switched to neutral light backgrounds while preserving density
+- all existing tab flows and operator actions preserved
+
+Execution evidence:
+- `apps/ui`: `npm run build` -> success
 
 Commits:
-- `TBD`
+- `d3e9d03`
