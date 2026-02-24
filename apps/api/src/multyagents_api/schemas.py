@@ -104,6 +104,28 @@ class RoleUpdate(BaseModel):
         return self
 
 
+class SkillPackCreate(BaseModel):
+    name: str = Field(min_length=1)
+    skills: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def normalize_fields(self) -> "SkillPackCreate":
+        self.name = self.name.strip()
+        self.skills = _normalize_string_list(self.skills)
+        return self
+
+
+class SkillPackRead(BaseModel):
+    id: int
+    name: str
+    skills: list[str] = Field(default_factory=list)
+    used_by_role_ids: list[int] = Field(default_factory=list)
+
+
+class SkillPackUpdate(SkillPackCreate):
+    pass
+
+
 class TaskCreate(BaseModel):
     role_id: int
     title: str = Field(min_length=1)

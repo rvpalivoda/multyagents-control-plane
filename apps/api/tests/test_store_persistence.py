@@ -1,12 +1,18 @@
 from pathlib import Path
 
-from multyagents_api.schemas import ArtifactCreate, EventCreate, RoleCreate, TaskCreate, WorkflowRunCreate
+from multyagents_api.schemas import ArtifactCreate, EventCreate, RoleCreate, SkillPackCreate, TaskCreate, WorkflowRunCreate
 from multyagents_api.store import InMemoryStore
 
 
 def test_store_restores_snapshot_from_state_file(tmp_path: Path) -> None:
     state_file = tmp_path / "api-state.json"
     first = InMemoryStore(state_file=str(state_file))
+    first.create_skill_pack(
+        SkillPackCreate(
+            name="core",
+            skills=["skills/task-governance"],
+        )
+    )
 
     role = first.create_role(
         RoleCreate(

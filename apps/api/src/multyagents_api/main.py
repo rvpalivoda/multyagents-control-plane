@@ -19,6 +19,9 @@ from multyagents_api.schemas import (
     ProjectCreate,
     ProjectRead,
     ProjectUpdate,
+    SkillPackCreate,
+    SkillPackRead,
+    SkillPackUpdate,
     RoleCreate,
     RoleRead,
     RunnerStatusUpdate,
@@ -119,7 +122,10 @@ def delete_project(project_id: int) -> None:
 
 @app.post("/roles", response_model=RoleRead)
 def create_role(payload: RoleCreate) -> RoleRead:
-    return store.create_role(payload)
+    try:
+        return store.create_role(payload)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/roles", response_model=list[RoleRead])
@@ -149,12 +155,59 @@ def update_role(role_id: int, payload: RoleUpdate) -> RoleRead:
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.delete("/roles/{role_id}", status_code=204)
 def delete_role(role_id: int) -> None:
     try:
         store.delete_role(role_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/skill-packs", response_model=SkillPackRead)
+def create_skill_pack(payload: SkillPackCreate) -> SkillPackRead:
+    try:
+        return store.create_skill_pack(payload)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/skill-packs", response_model=list[SkillPackRead])
+def list_skill_packs() -> list[SkillPackRead]:
+    return store.list_skill_packs()
+
+
+@app.get("/skill-packs/{pack_id}", response_model=SkillPackRead)
+def get_skill_pack(pack_id: int) -> SkillPackRead:
+    try:
+        return store.get_skill_pack(pack_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.put("/skill-packs/{pack_id}", response_model=SkillPackRead)
+def update_skill_pack(pack_id: int, payload: SkillPackUpdate) -> SkillPackRead:
+    try:
+        return store.update_skill_pack(pack_id, payload)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.delete("/skill-packs/{pack_id}", status_code=204)
+def delete_skill_pack(pack_id: int) -> None:
+    try:
+        store.delete_skill_pack(pack_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ConflictError as exc:

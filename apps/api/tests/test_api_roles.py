@@ -6,7 +6,17 @@ from multyagents_api.main import app
 client = TestClient(app)
 
 
+def _create_skill_pack(name: str, skills: list[str]) -> int:
+    response = client.post("/skill-packs", json={"name": name, "skills": skills})
+    assert response.status_code == 200
+    return response.json()["id"]
+
+
 def test_role_list_update_and_delete() -> None:
+    _create_skill_pack("core", ["skills/task-governance"])
+    _create_skill_pack("planning", ["skills/workflow-dag-engine"])
+    _create_skill_pack("delivery", ["skills/api-orchestrator-fastapi"])
+
     created = client.post(
         "/roles",
         json={

@@ -22,6 +22,9 @@ from multyagents_api.schemas import (
     ProjectRead,
     RunnerLifecycleStatus,
     RunnerSubmission,
+    SkillPackCreate,
+    SkillPackRead,
+    SkillPackUpdate,
     RoleCreate,
     RoleRead,
     RunnerContext,
@@ -63,6 +66,13 @@ class _RoleRecord:
     allowed_tools: list[str]
     skill_packs: list[str]
     execution_constraints: dict[str, Any]
+
+
+@dataclass
+class _SkillPackRecord:
+    id: int
+    name: str
+    skills: list[str]
 
 
 @dataclass
@@ -126,7 +136,9 @@ class _ApprovalRecord:
 class InMemoryStore:
     def __init__(self, state_file: str | None = None) -> None:
         self._state_file = Path(state_file).expanduser() if state_file else None
+        self._skills_catalog = self._load_skills_catalog()
         self._projects: dict[int, _ProjectRecord] = {}
+        self._skill_packs: dict[int, _SkillPackRecord] = {}
         self._roles: dict[int, _RoleRecord] = {}
         self._tasks: dict[int, _TaskRecord] = {}
         self._path_locks: dict[str, int] = {}
@@ -140,6 +152,7 @@ class InMemoryStore:
         self._events: list[EventRead] = []
         self._artifacts: list[ArtifactRead] = []
         self._project_seq = 1
+        self._skill_pack_seq = 1
         self._role_seq = 1
         self._task_seq = 1
         self._workflow_template_seq = 1
@@ -148,6 +161,49 @@ class InMemoryStore:
         self._event_seq = 1
         self._artifact_seq = 1
         self._load_state()
+
+    def create_skill_pack(self, pack: SkillPackCreate) -> SkillPackRead:
+        self._validate_skill_pack(name=pack.name, skills=pack.skills)
+        if any(record.name == pack.name for record in self._skill_packs.values()):
+            raise ConflictError(f"skill pack '{pack.name}' already exists")
+
+        pack_id = self._skill_pack_seq
+        self._skill_pack_seq += 1
+        record = _SkillPackRecord(id=pack_id, name=pack.name, skills=pack.skills)
+        self._skill_packs[pack_id] = record
+        self._persist_state()
+        return self._to_skill_pack_read(record)
+
+    def list_skill_packs(self) -> list[SkillPackRead]:
+        return [self._to_skill_pack_read(record) for record in self._skill_packs.values()]
+
+    def get_skill_pack(self, pack_id: int) -> SkillPackRead:
+        record = self._skill_packs.get(pack_id)
+        if record is None:
+            raise NotFoundError(f"skill pack {pack_id} not found")
+        return self._to_skill_pack_read(record)
+
+    def update_skill_pack(self, pack_id: int, pack: SkillPackUpdate) -> SkillPackRead:
+        if pack_id not in self._skill_packs:
+            raise NotFoundError(f"skill pack {pack_id} not found")
+        self._validate_skill_pack(name=pack.name, skills=pack.skills)
+        if any(record.id != pack_id and record.name == pack.name for record in self._skill_packs.values()):
+            raise ConflictError(f"skill pack '{pack.name}' already exists")
+
+        updated = _SkillPackRecord(id=pack_id, name=pack.name, skills=pack.skills)
+        self._skill_packs[pack_id] = updated
+        self._persist_state()
+        return self._to_skill_pack_read(updated)
+
+    def delete_skill_pack(self, pack_id: int) -> None:
+        record = self._skill_packs.get(pack_id)
+        if record is None:
+            raise NotFoundError(f"skill pack {pack_id} not found")
+        for role in self._roles.values():
+            if record.name in role.skill_packs:
+                raise ConflictError(f"skill pack '{record.name}' is used by role {role.id}")
+        del self._skill_packs[pack_id]
+        self._persist_state()
 
     def create_project(self, project: ProjectCreate) -> ProjectRead:
         project_id = self._project_seq
@@ -528,6 +584,7 @@ class InMemoryStore:
         return filtered[-limit:]
 
     def create_role(self, role: RoleCreate) -> RoleRead:
+        self._validate_role_skill_packs(role.skill_packs)
         role_id = self._role_seq
         self._role_seq += 1
         record = _RoleRecord(
@@ -593,6 +650,7 @@ class InMemoryStore:
         record = self._roles.get(role_id)
         if record is None:
             raise NotFoundError(f"role {role_id} not found")
+        self._validate_role_skill_packs(skill_packs)
         updated = _RoleRecord(
             id=record.id,
             name=name,
@@ -1046,6 +1104,41 @@ class InMemoryStore:
 
         return False
 
+    def _validate_role_skill_packs(self, skill_packs: list[str]) -> None:
+        if not skill_packs:
+            return
+        known_pack_names = {record.name for record in self._skill_packs.values()}
+        unknown = [value for value in skill_packs if value not in known_pack_names]
+        if unknown:
+            raise ValidationError(f"unknown skill packs: {', '.join(unknown)}")
+
+    def _validate_skill_pack(self, *, name: str, skills: list[str]) -> None:
+        if not name.strip():
+            raise ValidationError("skill pack name must not be empty")
+        if not skills:
+            raise ValidationError("skill pack must include at least one skill")
+        unknown_skills = [skill for skill in skills if skill not in self._skills_catalog]
+        if unknown_skills:
+            raise ValidationError(f"unknown skills in pack '{name}': {', '.join(unknown_skills)}")
+
+    def _load_skills_catalog(self) -> set[str]:
+        # Resolve from repository root so API can run from apps/api cwd.
+        docs_path = Path(__file__).resolve().parents[4] / "docs" / "SKILLS_CATALOG.md"
+        if not docs_path.exists():
+            return set()
+
+        skills: set[str] = set()
+        for line in docs_path.read_text(encoding="utf-8").splitlines():
+            trimmed = line.strip()
+            if not trimmed.startswith(tuple(str(index) + "." for index in range(1, 100))):
+                continue
+            if "`" not in trimmed:
+                continue
+            parts = trimmed.split("`")
+            if len(parts) >= 3 and parts[1]:
+                skills.add(parts[1])
+        return skills
+
     def _normalize_shared_lock_paths(self, project_id: int, lock_paths: list[str]) -> list[str]:
         project = self._projects.get(project_id)
         if project is None:
@@ -1436,6 +1529,10 @@ class InMemoryStore:
             int(key): _ProjectRecord(**value)
             for key, value in data.get("projects", {}).items()
         }
+        self._skill_packs = {
+            int(key): _SkillPackRecord(**value)
+            for key, value in data.get("skill_packs", {}).items()
+        }
         self._roles = {
             int(key): _RoleRecord(**value)
             for key, value in data.get("roles", {}).items()
@@ -1493,6 +1590,7 @@ class InMemoryStore:
 
         sequences = data.get("sequences", {})
         self._project_seq = int(sequences.get("project_seq", 1))
+        self._skill_pack_seq = int(sequences.get("skill_pack_seq", 1))
         self._role_seq = int(sequences.get("role_seq", 1))
         self._task_seq = int(sequences.get("task_seq", 1))
         self._workflow_template_seq = int(sequences.get("workflow_template_seq", 1))
@@ -1504,6 +1602,7 @@ class InMemoryStore:
     def _snapshot(self) -> dict[str, Any]:
         return {
             "projects": {str(key): value.__dict__ for key, value in self._projects.items()},
+            "skill_packs": {str(key): value.__dict__ for key, value in self._skill_packs.items()},
             "roles": {str(key): value.__dict__ for key, value in self._roles.items()},
             "tasks": {str(key): value.__dict__ for key, value in self._tasks.items()},
             "path_locks": self._path_locks,
@@ -1526,6 +1625,7 @@ class InMemoryStore:
             "artifacts": [artifact.model_dump() for artifact in self._artifacts],
             "sequences": {
                 "project_seq": self._project_seq,
+                "skill_pack_seq": self._skill_pack_seq,
                 "role_seq": self._role_seq,
                 "task_seq": self._task_seq,
                 "workflow_template_seq": self._workflow_template_seq,
@@ -1544,6 +1644,18 @@ class InMemoryStore:
             status=record.status,
             decided_by=record.decided_by,
             comment=record.comment,
+        )
+
+    def _to_skill_pack_read(self, record: _SkillPackRecord) -> SkillPackRead:
+        used_by_role_ids: list[int] = []
+        for role in self._roles.values():
+            if record.name in role.skill_packs:
+                used_by_role_ids.append(role.id)
+        return SkillPackRead(
+            id=record.id,
+            name=record.name,
+            skills=record.skills,
+            used_by_role_ids=used_by_role_ids,
         )
 
     @staticmethod

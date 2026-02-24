@@ -42,6 +42,13 @@ type ProjectRead = {
   allowed_paths: string[];
 };
 
+type SkillPackRead = {
+  id: number;
+  name: string;
+  skills: string[];
+  used_by_role_ids: number[];
+};
+
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8000";
 
 async function apiPost<T>(path: string, payload: unknown): Promise<T> {
@@ -105,6 +112,10 @@ export function App() {
   const [roleConstraintsJson, setRoleConstraintsJson] = useState("{}");
   const [roles, setRoles] = useState<RoleRead[]>([]);
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
+  const [skillPackName, setSkillPackName] = useState("core");
+  const [skillPackSkillsInput, setSkillPackSkillsInput] = useState("skills/task-governance");
+  const [skillPacks, setSkillPacks] = useState<SkillPackRead[]>([]);
+  const [selectedSkillPackId, setSelectedSkillPackId] = useState<number | null>(null);
 
   const [taskTitle, setTaskTitle] = useState("implement context policy");
   const [taskMode, setTaskMode] = useState<Context7Mode>("inherit");
@@ -147,12 +158,20 @@ export function App() {
     () => workflowRuns.find((item) => item.id === selectedRunId) ?? null,
     [workflowRuns, selectedRunId]
   );
+  const roleNameById = useMemo(() => {
+    const mapping: Record<number, string> = {};
+    roles.forEach((role) => {
+      mapping[role.id] = role.name;
+    });
+    return mapping;
+  }, [roles]);
 
   const canCreateTask = selectedRole !== null;
   const canDispatch = task !== null;
 
   useEffect(() => {
     void loadRoles();
+    void loadSkillPacks();
     void loadWorkflows();
     void loadProjects();
     void loadWorkflowRuns();
@@ -165,6 +184,18 @@ export function App() {
       setRoles(items);
       if (selectedRoleId === null && items.length > 0) {
         selectRole(items[0]);
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function loadSkillPacks() {
+    try {
+      const items = await apiGet<SkillPackRead[]>("/skill-packs");
+      setSkillPacks(items);
+      if (selectedSkillPackId === null && items.length > 0) {
+        selectSkillPack(items[0]);
       }
     } catch (err) {
       setError((err as Error).message);
@@ -238,6 +269,12 @@ export function App() {
     setRoleAllowedToolsInput(role.allowed_tools.join(", "));
     setRoleSkillPacksInput(role.skill_packs.join(", "));
     setRoleConstraintsJson(JSON.stringify(role.execution_constraints, null, 2));
+  }
+
+  function selectSkillPack(pack: SkillPackRead) {
+    setSelectedSkillPackId(pack.id);
+    setSkillPackName(pack.name);
+    setSkillPackSkillsInput(pack.skills.join(", "));
   }
 
   function selectWorkflow(workflow: WorkflowTemplateRead) {
@@ -388,6 +425,60 @@ export function App() {
       });
       await loadRoles();
       selectRole(updated);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function onCreateSkillPack(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    try {
+      const created = await apiPost<SkillPackRead>("/skill-packs", {
+        name: skillPackName,
+        skills: parseStringList(skillPackSkillsInput)
+      });
+      await loadSkillPacks();
+      selectSkillPack(created);
+      await loadRoles();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function onUpdateSkillPack() {
+    if (selectedSkillPackId === null) {
+      return;
+    }
+    setError(null);
+    try {
+      const updated = await apiPut<SkillPackRead>(`/skill-packs/${selectedSkillPackId}`, {
+        name: skillPackName,
+        skills: parseStringList(skillPackSkillsInput)
+      });
+      await loadSkillPacks();
+      selectSkillPack(updated);
+      await loadRoles();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function onDeleteSkillPack() {
+    if (selectedSkillPackId === null) {
+      return;
+    }
+    setError(null);
+    try {
+      await apiDelete(`/skill-packs/${selectedSkillPackId}`);
+      const remaining = skillPacks.filter((item) => item.id !== selectedSkillPackId);
+      setSkillPacks(remaining);
+      if (remaining.length > 0) {
+        selectSkillPack(remaining[0]);
+      } else {
+        setSelectedSkillPackId(null);
+      }
+      await loadRoles();
     } catch (err) {
       setError((err as Error).message);
     }
@@ -738,6 +829,11 @@ export function App() {
                 placeholder="core, planning"
               />
             </label>
+            {skillPacks.length > 0 && (
+              <div style={{ marginTop: 6 }}>
+                <strong>Available:</strong> {skillPacks.map((pack) => pack.name).join(", ")}
+              </div>
+            )}
           </div>
           <div style={{ marginTop: 8 }}>
             <label style={{ display: "block" }}>
@@ -774,6 +870,66 @@ export function App() {
                 <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{role.context7_enabled ? "on" : "off"}</td>
                 <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{role.allowed_tools.join(", ") || "-"}</td>
                 <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{role.skill_packs.join(", ") || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16 }}>
+        <h2>Skill Packs</h2>
+        <form onSubmit={onCreateSkillPack} style={{ marginBottom: 12 }}>
+          <label>
+            Name
+            <input value={skillPackName} onChange={(e) => setSkillPackName(e.target.value)} style={{ marginLeft: 8 }} />
+          </label>
+          <button type="submit" style={{ marginLeft: 16 }}>
+            Create skill pack
+          </button>
+          <button type="button" style={{ marginLeft: 8 }} onClick={onUpdateSkillPack} disabled={selectedSkillPackId === null}>
+            Update selected
+          </button>
+          <button type="button" style={{ marginLeft: 8 }} onClick={onDeleteSkillPack} disabled={selectedSkillPackId === null}>
+            Delete selected
+          </button>
+          <button type="button" style={{ marginLeft: 8 }} onClick={() => void loadSkillPacks()}>
+            Refresh
+          </button>
+          <div style={{ marginTop: 8 }}>
+            <label>
+              Skills (comma/newline)
+              <input
+                value={skillPackSkillsInput}
+                onChange={(e) => setSkillPackSkillsInput(e.target.value)}
+                style={{ marginLeft: 8, width: 540 }}
+                placeholder="skills/task-governance, skills/api-orchestrator-fastapi"
+              />
+            </label>
+          </div>
+        </form>
+
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>id</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>name</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>skills</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>used by roles</th>
+            </tr>
+          </thead>
+          <tbody>
+            {skillPacks.map((pack) => (
+              <tr
+                key={pack.id}
+                onClick={() => selectSkillPack(pack)}
+                style={{ cursor: "pointer", backgroundColor: pack.id === selectedSkillPackId ? "#f2f2f2" : "transparent" }}
+              >
+                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{pack.id}</td>
+                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{pack.name}</td>
+                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{pack.skills.join(", ") || "-"}</td>
+                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>
+                  {pack.used_by_role_ids.map((roleId) => roleNameById[roleId] ?? String(roleId)).join(", ") || "-"}
+                </td>
               </tr>
             ))}
           </tbody>
