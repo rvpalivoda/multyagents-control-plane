@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `review`
+- Status: `done`
 - Priority: `P0`
 - Owner: `codex`
 - Created: `2026-02-23`
@@ -75,3 +75,6 @@ Verification:
 
 - `cd apps/api && .venv/bin/pytest -q` -> `53 passed`
 - `cd apps/host-runner && .venv/bin/pytest -q` -> `12 passed`
+
+Commits:
+- `28be9f3` (`feat(task-016): bootstrap monorepo baseline`)

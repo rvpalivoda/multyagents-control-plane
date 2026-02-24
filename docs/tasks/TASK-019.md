@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `review`
+- Status: `done`
 - Priority: `P1`
 - Owner: `codex`
 - Created: `2026-02-23`
@@ -70,3 +70,6 @@ Verification:
 - `apps/host-runner`: `./.venv/bin/pytest -q` -> `5 passed`
 - `apps/telegram-bot`: `./.venv/bin/pytest -q` -> `10 passed`
 - `apps/ui`: `npm run build` succeeded
+
+Commits:
+- `28be9f3` (`feat(task-016): bootstrap monorepo baseline`)
