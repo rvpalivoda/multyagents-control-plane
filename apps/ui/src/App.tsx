@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type {
+  ApprovalStatus,
   Context7Mode,
   EventRead,
   ExecutionMode,
@@ -49,7 +50,48 @@ type SkillPackRead = {
   used_by_role_ids: number[];
 };
 
+type ApprovalRead = {
+  id: number;
+  task_id: number;
+  status: ApprovalStatus;
+  decided_by: string | null;
+  comment: string | null;
+};
+
+type UiTab = "overview" | "projects" | "roles" | "skills" | "workflows" | "runs" | "tasks" | "approvals";
+
+const UI_TABS: Array<{ id: UiTab; label: string }> = [
+  { id: "overview", label: "Overview" },
+  { id: "projects", label: "Projects" },
+  { id: "roles", label: "Roles" },
+  { id: "skills", label: "Skill Packs" },
+  { id: "workflows", label: "Workflows" },
+  { id: "runs", label: "Runs" },
+  { id: "tasks", label: "Tasks" },
+  { id: "approvals", label: "Approvals" }
+];
+
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8000";
+
+class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+async function createApiError(response: Response): Promise<ApiError> {
+  const text = await response.text();
+  const message = text.trim().length > 0 ? text : `Request failed with status ${response.status}`;
+  return new ApiError(response.status, message);
+}
+
+function isApiErrorWithStatus(error: unknown, status: number): boolean {
+  return error instanceof ApiError && error.status === status;
+}
 
 async function apiPost<T>(path: string, payload: unknown): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -59,7 +101,7 @@ async function apiPost<T>(path: string, payload: unknown): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw await createApiError(response);
   }
 
   return (await response.json()) as T;
@@ -73,7 +115,7 @@ async function apiPut<T>(path: string, payload: unknown): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw await createApiError(response);
   }
 
   return (await response.json()) as T;
@@ -82,14 +124,14 @@ async function apiPut<T>(path: string, payload: unknown): Promise<T> {
 async function apiDelete(path: string): Promise<void> {
   const response = await fetch(`${API_BASE}${path}`, { method: "DELETE" });
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw await createApiError(response);
   }
 }
 
 async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`);
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw await createApiError(response);
   }
   return (await response.json()) as T;
 }
@@ -104,6 +146,7 @@ const DEFAULT_STEPS_JSON = stepsToJson([
 ]);
 
 export function App() {
+  const [activeTab, setActiveTab] = useState<UiTab>("overview");
   const [roleName, setRoleName] = useState("coder");
   const [roleContext7Enabled, setRoleContext7Enabled] = useState(true);
   const [roleSystemPrompt, setRoleSystemPrompt] = useState("");
@@ -148,6 +191,14 @@ export function App() {
 
   const [audit, setAudit] = useState<TaskAudit | null>(null);
   const [dispatchResult, setDispatchResult] = useState<DispatchResult | null>(null);
+  const [taskApproval, setTaskApproval] = useState<ApprovalRead | null>(null);
+  const [approvals, setApprovals] = useState<ApprovalRead[]>([]);
+  const [selectedApprovalId, setSelectedApprovalId] = useState<number | null>(null);
+  const [approvalLookupIdInput, setApprovalLookupIdInput] = useState("");
+  const [approvalActor, setApprovalActor] = useState("operator-ui");
+  const [approvalComment, setApprovalComment] = useState("");
+  const [taskSearchInput, setTaskSearchInput] = useState("");
+  const [runSearchInput, setRunSearchInput] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const selectedRole = useMemo(
@@ -165,6 +216,51 @@ export function App() {
     });
     return mapping;
   }, [roles]);
+  const filteredTasks = useMemo(() => {
+    const query = taskSearchInput.trim().toLowerCase();
+    if (query.length === 0) {
+      return tasks;
+    }
+    return tasks.filter((item) => {
+      const haystack = [
+        String(item.id),
+        item.title,
+        item.status,
+        item.execution_mode,
+        String(item.role_id),
+        item.project_id === null ? "" : String(item.project_id)
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [taskSearchInput, tasks]);
+  const filteredRuns = useMemo(() => {
+    const query = runSearchInput.trim().toLowerCase();
+    if (query.length === 0) {
+      return workflowRuns;
+    }
+    return workflowRuns.filter((item) => {
+      const haystack = [
+        String(item.id),
+        item.status,
+        item.initiated_by ?? "",
+        item.workflow_template_id === null ? "" : String(item.workflow_template_id),
+        item.task_ids.join(",")
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [runSearchInput, workflowRuns]);
+  const selectedApproval = useMemo(
+    () => approvals.find((item) => item.id === selectedApprovalId) ?? taskApproval,
+    [approvals, selectedApprovalId, taskApproval]
+  );
+  const pendingApprovalsCount = useMemo(
+    () => approvals.filter((item) => item.status === "pending").length,
+    [approvals]
+  );
 
   const canCreateTask = selectedRole !== null;
   const canDispatch = task !== null;
@@ -177,6 +273,14 @@ export function App() {
     void loadWorkflowRuns();
     void loadTasks();
   }, []);
+
+  useEffect(() => {
+    if (tasks.length === 0) {
+      setApprovals([]);
+      return;
+    }
+    void refreshApprovals();
+  }, [tasks]);
 
   async function loadRoles() {
     try {
@@ -332,6 +436,115 @@ export function App() {
     return Number.isNaN(parsed) ? null : parsed;
   }
 
+  function upsertApproval(approval: ApprovalRead) {
+    setApprovals((current) => {
+      const index = current.findIndex((item) => item.id === approval.id);
+      if (index === -1) {
+        return [approval, ...current];
+      }
+      return current.map((item) => (item.id === approval.id ? approval : item));
+    });
+  }
+
+  async function loadTaskApproval(taskId: number): Promise<ApprovalRead | null> {
+    try {
+      const approval = await apiGet<ApprovalRead>(`/tasks/${taskId}/approval`);
+      setTaskApproval(approval);
+      setSelectedApprovalId(approval.id);
+      upsertApproval(approval);
+      return approval;
+    } catch (err) {
+      if (isApiErrorWithStatus(err, 404)) {
+        setTaskApproval(null);
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  async function refreshApprovals() {
+    setError(null);
+    try {
+      const candidates = tasks.filter((item) => item.requires_approval);
+      if (candidates.length === 0) {
+        setApprovals([]);
+        return;
+      }
+      const collected = await Promise.all(
+        candidates.map(async (item) => {
+          try {
+            return await apiGet<ApprovalRead>(`/tasks/${item.id}/approval`);
+          } catch (err) {
+            if (isApiErrorWithStatus(err, 404)) {
+              return null;
+            }
+            throw err;
+          }
+        })
+      );
+      const available = collected.filter((item): item is ApprovalRead => item !== null);
+      setApprovals(available);
+      if (selectedApprovalId === null && available.length > 0) {
+        setSelectedApprovalId(available[0].id);
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function onLookupApprovalById() {
+    const parsed = Number(approvalLookupIdInput.trim());
+    if (Number.isNaN(parsed)) {
+      setError("Approval ID must be a number.");
+      return;
+    }
+    setError(null);
+    try {
+      const approval = await apiGet<ApprovalRead>(`/approvals/${parsed}`);
+      setSelectedApprovalId(approval.id);
+      setTaskApproval((current) => (current?.id === approval.id ? approval : current));
+      upsertApproval(approval);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function onApprovalDecision(action: "approve" | "reject") {
+    if (!selectedApproval) {
+      return;
+    }
+    setError(null);
+    try {
+      const payload = {
+        actor: approvalActor.trim().length > 0 ? approvalActor.trim() : null,
+        comment: approvalComment.trim().length > 0 ? approvalComment.trim() : null
+      };
+      const path =
+        action === "approve"
+          ? `/approvals/${selectedApproval.id}/approve`
+          : `/approvals/${selectedApproval.id}/reject`;
+      const updated = await apiPost<ApprovalRead>(path, payload);
+      setTaskApproval((current) => (current?.id === updated.id ? updated : current));
+      setSelectedApprovalId(updated.id);
+      upsertApproval(updated);
+      await loadTasks(parseOptionalId(taskFilterRunIdInput));
+      await loadTimelineEvents(selectedRunId, updated.task_id);
+      if (task?.id === updated.task_id) {
+        const currentTask = await apiGet<TaskRead>(`/tasks/${task.id}`);
+        setTask(currentTask);
+        const currentAudit = await apiGet<TaskAudit>(`/tasks/${task.id}/audit`);
+        setAudit(currentAudit);
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function onRefreshAll() {
+    setError(null);
+    await Promise.all([loadProjects(), loadRoles(), loadSkillPacks(), loadWorkflows(), loadWorkflowRuns(), loadTasks()]);
+  }
+
   async function onCreateRole(event: FormEvent) {
     event.preventDefault();
     setError(null);
@@ -350,6 +563,7 @@ export function App() {
       setTask(null);
       setAudit(null);
       setDispatchResult(null);
+      setTaskApproval(null);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -525,6 +739,11 @@ export function App() {
         lock_paths: lockPaths
       });
       setTask(created);
+      if (created.requires_approval) {
+        await loadTaskApproval(created.id);
+      } else {
+        setTaskApproval(null);
+      }
       await loadTasks(parseOptionalId(taskFilterRunIdInput));
       setAudit(null);
       setDispatchResult(null);
@@ -543,6 +762,11 @@ export function App() {
       setDispatchResult(result);
       const currentTask = await apiGet<TaskRead>(`/tasks/${task.id}`);
       setTask(currentTask);
+      if (currentTask.requires_approval) {
+        await loadTaskApproval(currentTask.id);
+      } else {
+        setTaskApproval(null);
+      }
       await loadTasks(parseOptionalId(taskFilterRunIdInput));
       const currentAudit = await apiGet<TaskAudit>(`/tasks/${task.id}/audit`);
       setAudit(currentAudit);
@@ -560,6 +784,11 @@ export function App() {
     try {
       const updated = await apiPost<TaskRead>(`/tasks/${task.id}/cancel`, {});
       setTask(updated);
+      if (updated.requires_approval) {
+        await loadTaskApproval(updated.id);
+      } else {
+        setTaskApproval(null);
+      }
       await loadTasks(parseOptionalId(taskFilterRunIdInput));
       await loadTimelineEvents(selectedRunId, task.id);
     } catch (err) {
@@ -575,6 +804,11 @@ export function App() {
     try {
       const current = await apiGet<TaskRead>(`/tasks/${task.id}`);
       setTask(current);
+      if (current.requires_approval) {
+        await loadTaskApproval(current.id);
+      } else {
+        setTaskApproval(null);
+      }
       await loadTasks(parseOptionalId(taskFilterRunIdInput));
     } catch (err) {
       setError((err as Error).message);
@@ -633,6 +867,11 @@ export function App() {
         const currentAudit = await apiGet<TaskAudit>(`/tasks/${result.task_id}/audit`);
         setAudit(currentAudit);
         setDispatchResult(result.dispatch);
+        if (currentTask.requires_approval) {
+          await loadTaskApproval(currentTask.id);
+        } else {
+          setTaskApproval(null);
+        }
       }
       await loadTimelineEvents(selectedRunId, result.task_id);
     } catch (err) {
@@ -704,11 +943,88 @@ export function App() {
   }
 
   return (
-    <main style={{ maxWidth: 1080, margin: "0 auto", padding: 24, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-      <h1>Control Panel MVP</h1>
-      <p>API: {API_BASE}</p>
+    <main style={{ maxWidth: 1180, margin: "0 auto", padding: 24, fontFamily: "Inter, system-ui, sans-serif", color: "#24292f" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <h1 style={{ marginBottom: 4 }}>Control Panel</h1>
+          <p style={{ margin: 0, color: "#57606a" }}>API: {API_BASE}</p>
+        </div>
+        <button type="button" onClick={() => void onRefreshAll()}>
+          Refresh all
+        </button>
+      </div>
 
-      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16 }}>
+      <div
+        style={{
+          marginTop: 12,
+          marginBottom: 12,
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+          gap: 8
+        }}
+      >
+        <div style={{ border: "1px solid #d0d7de", borderRadius: 8, padding: 10 }}>
+          <strong>Projects</strong>
+          <div>{projects.length}</div>
+        </div>
+        <div style={{ border: "1px solid #d0d7de", borderRadius: 8, padding: 10 }}>
+          <strong>Roles</strong>
+          <div>{roles.length}</div>
+        </div>
+        <div style={{ border: "1px solid #d0d7de", borderRadius: 8, padding: 10 }}>
+          <strong>Runs</strong>
+          <div>{workflowRuns.length}</div>
+        </div>
+        <div style={{ border: "1px solid #d0d7de", borderRadius: 8, padding: 10 }}>
+          <strong>Tasks</strong>
+          <div>{tasks.length}</div>
+        </div>
+        <div style={{ border: "1px solid #d0d7de", borderRadius: 8, padding: 10 }}>
+          <strong>Pending approvals</strong>
+          <div>{pendingApprovalsCount}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+        {UI_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            style={{
+              borderRadius: 8,
+              border: "1px solid #d0d7de",
+              padding: "6px 10px",
+              cursor: "pointer",
+              backgroundColor: activeTab === tab.id ? "#0969da" : "#ffffff",
+              color: activeTab === tab.id ? "#ffffff" : "#24292f"
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16, display: activeTab === "overview" ? "block" : "none" }}>
+        <h2>Overview</h2>
+        <p style={{ marginTop: 0 }}>Select a tab to focus on one workflow area.</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 8 }}>
+          <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 10 }}>
+            <strong>Selected run</strong>
+            <div>{selectedRun ? `${selectedRun.id} (${selectedRun.status})` : "none"}</div>
+          </div>
+          <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 10 }}>
+            <strong>Selected task</strong>
+            <div>{task ? `${task.id} (${task.status})` : "none"}</div>
+          </div>
+          <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 10 }}>
+            <strong>Selected approval</strong>
+            <div>{selectedApproval ? `${selectedApproval.id} (${selectedApproval.status})` : "none"}</div>
+          </div>
+        </div>
+      </section>
+
+      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16, display: activeTab === "projects" ? "block" : "none" }}>
         <h2>Projects</h2>
         <form onSubmit={onCreateProject} style={{ marginBottom: 12 }}>
           <label>
@@ -769,7 +1085,7 @@ export function App() {
         </table>
       </section>
 
-      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16 }}>
+      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16, display: activeTab === "roles" ? "block" : "none" }}>
         <h2>Roles</h2>
         <form onSubmit={onCreateRole} style={{ marginBottom: 12 }}>
           <label>
@@ -876,7 +1192,7 @@ export function App() {
         </table>
       </section>
 
-      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16 }}>
+      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16, display: activeTab === "skills" ? "block" : "none" }}>
         <h2>Skill Packs</h2>
         <form onSubmit={onCreateSkillPack} style={{ marginBottom: 12 }}>
           <label>
@@ -936,7 +1252,7 @@ export function App() {
         </table>
       </section>
 
-      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16 }}>
+      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16, display: activeTab === "workflows" ? "block" : "none" }}>
         <h2>Workflow Templates</h2>
         <form onSubmit={onCreateWorkflow}>
           <label>
@@ -1003,7 +1319,7 @@ export function App() {
         </table>
       </section>
 
-      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16 }}>
+      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16, display: activeTab === "runs" ? "block" : "none" }}>
         <h2>Workflow Runs and Timeline</h2>
         <form onSubmit={onCreateWorkflowRun}>
           <label>
@@ -1051,6 +1367,18 @@ export function App() {
           </button>
         </form>
 
+        <div style={{ marginTop: 10 }}>
+          <label>
+            Search runs
+            <input
+              value={runSearchInput}
+              onChange={(e) => setRunSearchInput(e.target.value)}
+              style={{ marginLeft: 8, width: 240 }}
+              placeholder="id/status/template"
+            />
+          </label>
+        </div>
+
         <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
           <thead>
             <tr>
@@ -1062,11 +1390,13 @@ export function App() {
             </tr>
           </thead>
           <tbody>
-            {workflowRuns.map((run) => (
+            {filteredRuns.map((run) => (
               <tr
                 key={run.id}
                 onClick={() => {
                   setSelectedRunId(run.id);
+                  setTaskFilterRunIdInput(String(run.id));
+                  void loadTasks(run.id);
                   void loadTimelineEvents(run.id, null);
                 }}
                 style={{ cursor: "pointer", backgroundColor: run.id === selectedRunId ? "#f2f2f2" : "transparent" }}
@@ -1088,7 +1418,7 @@ export function App() {
         <pre style={{ marginTop: 8 }}>{JSON.stringify(timelineEvents, null, 2)}</pre>
       </section>
 
-      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16 }}>
+      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16, display: activeTab === "tasks" ? "block" : "none" }}>
         <h2>Task Explorer</h2>
         <label>
           Run ID filter
@@ -1099,6 +1429,15 @@ export function App() {
             placeholder="optional"
           />
         </label>
+        <label style={{ marginLeft: 8 }}>
+          Search
+          <input
+            value={taskSearchInput}
+            onChange={(e) => setTaskSearchInput(e.target.value)}
+            style={{ marginLeft: 8, width: 220 }}
+            placeholder="id/title/status"
+          />
+        </label>
         <button type="button" style={{ marginLeft: 8 }} onClick={() => void onRefreshTasks()}>
           Refresh tasks
         </button>
@@ -1107,6 +1446,7 @@ export function App() {
           style={{ marginLeft: 8 }}
           onClick={() => {
             setTaskFilterRunIdInput("");
+            setTaskSearchInput("");
             void loadTasks();
           }}
         >
@@ -1124,11 +1464,16 @@ export function App() {
             </tr>
           </thead>
           <tbody>
-            {tasks.map((item) => (
+            {filteredTasks.map((item) => (
               <tr
                 key={item.id}
                 onClick={() => {
                   setTask(item);
+                  if (item.requires_approval) {
+                    void loadTaskApproval(item.id);
+                  } else {
+                    setTaskApproval(null);
+                  }
                   void loadTimelineEvents(selectedRunId, item.id);
                 }}
                 style={{ cursor: "pointer", backgroundColor: task?.id === item.id ? "#f2f2f2" : "transparent" }}
@@ -1145,10 +1490,43 @@ export function App() {
         </table>
       </section>
 
-      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16, opacity: canCreateTask ? 1 : 0.6 }}>
+      <section
+        style={{
+          border: "1px solid #ddd",
+          padding: 16,
+          marginBottom: 16,
+          opacity: canCreateTask ? 1 : 0.6,
+          display: activeTab === "tasks" ? "block" : "none"
+        }}
+      >
         <h2>Create Task</h2>
         <form onSubmit={onCreateTask}>
           <label>
+            Role
+            <select
+              value={selectedRoleId ?? ""}
+              onChange={(e) => {
+                if (e.target.value === "") {
+                  setSelectedRoleId(null);
+                  return;
+                }
+                const parsed = Number(e.target.value);
+                const nextRole = roles.find((role) => role.id === parsed);
+                if (nextRole) {
+                  selectRole(nextRole);
+                }
+              }}
+              style={{ marginLeft: 8, minWidth: 220 }}
+            >
+              <option value="">select role</option>
+              {roles.map((role) => (
+                <option key={role.id} value={String(role.id)}>
+                  {role.id}: {role.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label style={{ marginLeft: 16 }}>
             Title
             <input value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} style={{ marginLeft: 8 }} disabled={!canCreateTask} />
           </label>
@@ -1223,7 +1601,7 @@ export function App() {
         {task && <pre>{JSON.stringify(task, null, 2)}</pre>}
       </section>
 
-      <section style={{ border: "1px solid #ddd", padding: 16 }}>
+      <section style={{ border: "1px solid #ddd", padding: 16, display: activeTab === "tasks" ? "block" : "none" }}>
         <h2>Dispatch and Audit</h2>
         <button onClick={onDispatch} disabled={!canDispatch}>
           Dispatch task
@@ -1234,8 +1612,107 @@ export function App() {
         <button onClick={onRefreshTask} style={{ marginLeft: 8 }} disabled={!task}>
           Refresh task
         </button>
+        <button
+          type="button"
+          style={{ marginLeft: 8 }}
+          disabled={!task?.requires_approval}
+          onClick={() => {
+            if (task) {
+              void loadTaskApproval(task.id);
+            }
+            setActiveTab("approvals");
+          }}
+        >
+          Open approval
+        </button>
         {dispatchResult && <pre>{JSON.stringify(dispatchResult, null, 2)}</pre>}
         {audit && <pre>{JSON.stringify(audit, null, 2)}</pre>}
+        {taskApproval && <pre>{JSON.stringify(taskApproval, null, 2)}</pre>}
+      </section>
+
+      <section style={{ border: "1px solid #ddd", padding: 16, marginTop: 16, display: activeTab === "approvals" ? "block" : "none" }}>
+        <h2>Approvals Inbox</h2>
+        <div>
+          <button type="button" onClick={() => void refreshApprovals()}>
+            Refresh approvals
+          </button>
+          <label style={{ marginLeft: 8 }}>
+            Approval ID
+            <input
+              value={approvalLookupIdInput}
+              onChange={(e) => setApprovalLookupIdInput(e.target.value)}
+              style={{ marginLeft: 8, width: 100 }}
+            />
+          </label>
+          <button type="button" style={{ marginLeft: 8 }} onClick={() => void onLookupApprovalById()}>
+            Load by id
+          </button>
+        </div>
+
+        <div style={{ marginTop: 10 }}>
+          <label>
+            Actor
+            <input
+              value={approvalActor}
+              onChange={(e) => setApprovalActor(e.target.value)}
+              style={{ marginLeft: 8, width: 180 }}
+            />
+          </label>
+          <label style={{ marginLeft: 12 }}>
+            Comment
+            <input
+              value={approvalComment}
+              onChange={(e) => setApprovalComment(e.target.value)}
+              style={{ marginLeft: 8, width: 300 }}
+            />
+          </label>
+          <button
+            type="button"
+            style={{ marginLeft: 8 }}
+            onClick={() => void onApprovalDecision("approve")}
+            disabled={selectedApproval?.status !== "pending"}
+          >
+            Approve
+          </button>
+          <button
+            type="button"
+            style={{ marginLeft: 8 }}
+            onClick={() => void onApprovalDecision("reject")}
+            disabled={selectedApproval?.status !== "pending"}
+          >
+            Reject
+          </button>
+        </div>
+
+        <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>id</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>task</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>status</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>decided by</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>comment</th>
+            </tr>
+          </thead>
+          <tbody>
+            {approvals.map((approval) => (
+              <tr
+                key={approval.id}
+                onClick={() => {
+                  setSelectedApprovalId(approval.id);
+                  setTaskApproval(approval);
+                }}
+                style={{ cursor: "pointer", backgroundColor: selectedApproval?.id === approval.id ? "#f2f2f2" : "transparent" }}
+              >
+                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{approval.id}</td>
+                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{approval.task_id}</td>
+                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{approval.status}</td>
+                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{approval.decided_by ?? "-"}</td>
+                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{approval.comment ?? "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </section>
 
       {error && (
