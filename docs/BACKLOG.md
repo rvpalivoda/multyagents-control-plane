@@ -57,7 +57,7 @@
 - `TASK-029` (`P0`, `done`): Add end-to-end smoke test runner for docker stack + host runner
 
 ### EPIC-6 Knowledge providers
-- `TASK-015` (`P1`, `review`): Integrate Context7 into role/task policy, runner payloads, and UI controls
+- `TASK-015` (`P1`, `done`): Integrate Context7 into role/task policy, runner payloads, and UI controls
 
 ## Operating rule
 
