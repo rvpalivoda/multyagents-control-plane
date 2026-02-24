@@ -942,784 +942,679 @@ export function App() {
     }
   }
 
+  const cardClass = "rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm";
+  const sectionClass = "rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm";
+  const labelClass = "text-xs font-medium uppercase tracking-wide text-slate-400";
+  const inputClass =
+    "mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-blue-500";
+  const textareaClass =
+    "mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-blue-500";
+  const buttonClass =
+    "inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 transition hover:border-slate-500 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40";
+  const primaryButtonClass =
+    "inline-flex items-center justify-center rounded-lg border border-blue-500 bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40";
+  const tableClass = "w-full min-w-[720px] border-collapse text-left text-sm";
+  const thClass = "border-b border-slate-700 px-2 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400";
+  const tdClass = "border-b border-slate-800 px-2 py-2 text-sm text-slate-200";
+
   return (
-    <main style={{ maxWidth: 1180, margin: "0 auto", padding: 24, fontFamily: "Inter, system-ui, sans-serif", color: "#24292f" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <h1 style={{ marginBottom: 4 }}>Control Panel</h1>
-          <p style={{ margin: 0, color: "#57606a" }}>API: {API_BASE}</p>
-        </div>
-        <button type="button" onClick={() => void onRefreshAll()}>
-          Refresh all
-        </button>
-      </div>
-
-      <div
-        style={{
-          marginTop: 12,
-          marginBottom: 12,
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
-          gap: 8
-        }}
-      >
-        <div style={{ border: "1px solid #d0d7de", borderRadius: 8, padding: 10 }}>
-          <strong>Projects</strong>
-          <div>{projects.length}</div>
-        </div>
-        <div style={{ border: "1px solid #d0d7de", borderRadius: 8, padding: 10 }}>
-          <strong>Roles</strong>
-          <div>{roles.length}</div>
-        </div>
-        <div style={{ border: "1px solid #d0d7de", borderRadius: 8, padding: 10 }}>
-          <strong>Runs</strong>
-          <div>{workflowRuns.length}</div>
-        </div>
-        <div style={{ border: "1px solid #d0d7de", borderRadius: 8, padding: 10 }}>
-          <strong>Tasks</strong>
-          <div>{tasks.length}</div>
-        </div>
-        <div style={{ border: "1px solid #d0d7de", borderRadius: 8, padding: 10 }}>
-          <strong>Pending approvals</strong>
-          <div>{pendingApprovalsCount}</div>
-        </div>
-      </div>
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-        {UI_TABS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActiveTab(tab.id)}
-            style={{
-              borderRadius: 8,
-              border: "1px solid #d0d7de",
-              padding: "6px 10px",
-              cursor: "pointer",
-              backgroundColor: activeTab === tab.id ? "#0969da" : "#ffffff",
-              color: activeTab === tab.id ? "#ffffff" : "#24292f"
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16, display: activeTab === "overview" ? "block" : "none" }}>
-        <h2>Overview</h2>
-        <p style={{ marginTop: 0 }}>Select a tab to focus on one workflow area.</p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 8 }}>
-          <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 10 }}>
-            <strong>Selected run</strong>
-            <div>{selectedRun ? `${selectedRun.id} (${selectedRun.status})` : "none"}</div>
+    <main className="min-h-screen w-full bg-slate-950 text-slate-100">
+      <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
+        <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight">Multiagents Control Panel</h1>
+            <p className="mt-1 text-sm text-slate-400">API: {API_BASE}</p>
           </div>
-          <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 10 }}>
-            <strong>Selected task</strong>
-            <div>{task ? `${task.id} (${task.status})` : "none"}</div>
+          <button type="button" className={primaryButtonClass} onClick={() => void onRefreshAll()}>
+            Refresh all
+          </button>
+        </header>
+
+        <section className="mb-4 grid w-full grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <div className={cardClass}>
+            <p className={labelClass}>Projects</p>
+            <p className="mt-2 text-2xl font-semibold">{projects.length}</p>
           </div>
-          <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 10 }}>
-            <strong>Selected approval</strong>
-            <div>{selectedApproval ? `${selectedApproval.id} (${selectedApproval.status})` : "none"}</div>
+          <div className={cardClass}>
+            <p className={labelClass}>Roles</p>
+            <p className="mt-2 text-2xl font-semibold">{roles.length}</p>
           </div>
-        </div>
-      </section>
-
-      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16, display: activeTab === "projects" ? "block" : "none" }}>
-        <h2>Projects</h2>
-        <form onSubmit={onCreateProject} style={{ marginBottom: 12 }}>
-          <label>
-            Name
-            <input value={projectName} onChange={(e) => setProjectName(e.target.value)} style={{ marginLeft: 8 }} />
-          </label>
-          <label style={{ marginLeft: 16 }}>
-            Root path
-            <input value={projectRootPath} onChange={(e) => setProjectRootPath(e.target.value)} style={{ marginLeft: 8, width: 320 }} />
-          </label>
-          <button type="submit" style={{ marginLeft: 16 }}>
-            Create project
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={onUpdateProject} disabled={selectedProjectId === null}>
-            Update selected
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={onDeleteProject} disabled={selectedProjectId === null}>
-            Delete selected
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={() => void loadProjects()}>
-            Refresh
-          </button>
-          <div style={{ marginTop: 8 }}>
-            <label>
-              Allowed paths (comma/newline)
-              <input
-                value={projectAllowedPathsInput}
-                onChange={(e) => setProjectAllowedPathsInput(e.target.value)}
-                style={{ marginLeft: 8, width: 500 }}
-              />
-            </label>
+          <div className={cardClass}>
+            <p className={labelClass}>Skill packs</p>
+            <p className="mt-2 text-2xl font-semibold">{skillPacks.length}</p>
           </div>
-        </form>
-
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>id</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>name</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>root</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>allowed paths</th>
-            </tr>
-          </thead>
-          <tbody>
-            {projects.map((project) => (
-              <tr
-                key={project.id}
-                onClick={() => selectProject(project)}
-                style={{ cursor: "pointer", backgroundColor: project.id === selectedProjectId ? "#f2f2f2" : "transparent" }}
-              >
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{project.id}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{project.name}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{project.root_path}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{project.allowed_paths.join(", ")}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16, display: activeTab === "roles" ? "block" : "none" }}>
-        <h2>Roles</h2>
-        <form onSubmit={onCreateRole} style={{ marginBottom: 12 }}>
-          <label>
-            Role name
-            <input value={roleName} onChange={(e) => setRoleName(e.target.value)} style={{ marginLeft: 8 }} />
-          </label>
-          <label style={{ marginLeft: 16 }}>
-            Context7 default
-            <input
-              type="checkbox"
-              checked={roleContext7Enabled}
-              onChange={(e) => setRoleContext7Enabled(e.target.checked)}
-              style={{ marginLeft: 8 }}
-            />
-          </label>
-          <button type="submit" style={{ marginLeft: 16 }}>
-            Create role
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={onUpdateRole} disabled={selectedRoleId === null}>
-            Update selected
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={onDeleteRole} disabled={selectedRoleId === null}>
-            Delete selected
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={() => void loadRoles()}>
-            Refresh
-          </button>
-          <div style={{ marginTop: 12 }}>
-            <label style={{ display: "block" }}>
-              System prompt
-              <textarea
-                value={roleSystemPrompt}
-                onChange={(e) => setRoleSystemPrompt(e.target.value)}
-                rows={3}
-                style={{ display: "block", width: "100%", marginTop: 6, fontFamily: "inherit" }}
-              />
-            </label>
+          <div className={cardClass}>
+            <p className={labelClass}>Runs</p>
+            <p className="mt-2 text-2xl font-semibold">{workflowRuns.length}</p>
           </div>
-          <div style={{ marginTop: 8 }}>
-            <label>
-              Allowed tools (comma/newline)
-              <input
-                value={roleAllowedToolsInput}
-                onChange={(e) => setRoleAllowedToolsInput(e.target.value)}
-                style={{ marginLeft: 8, width: 300 }}
-                placeholder="read, write, terminal"
-              />
-            </label>
+          <div className={cardClass}>
+            <p className={labelClass}>Tasks</p>
+            <p className="mt-2 text-2xl font-semibold">{tasks.length}</p>
           </div>
-          <div style={{ marginTop: 8 }}>
-            <label>
-              Skill packs (comma/newline)
-              <input
-                value={roleSkillPacksInput}
-                onChange={(e) => setRoleSkillPacksInput(e.target.value)}
-                style={{ marginLeft: 8, width: 300 }}
-                placeholder="core, planning"
-              />
-            </label>
-            {skillPacks.length > 0 && (
-              <div style={{ marginTop: 6 }}>
-                <strong>Available:</strong> {skillPacks.map((pack) => pack.name).join(", ")}
-              </div>
-            )}
+          <div className={cardClass}>
+            <p className={labelClass}>Pending approvals</p>
+            <p className="mt-2 text-2xl font-semibold">{pendingApprovalsCount}</p>
           </div>
-          <div style={{ marginTop: 8 }}>
-            <label style={{ display: "block" }}>
-              Execution constraints JSON
-              <textarea
-                value={roleConstraintsJson}
-                onChange={(e) => setRoleConstraintsJson(e.target.value)}
-                rows={4}
-                style={{ display: "block", width: "100%", marginTop: 6, fontFamily: "inherit" }}
-              />
-            </label>
-          </div>
-        </form>
+        </section>
 
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>id</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>name</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>context7</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>tools</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>skills</th>
-            </tr>
-          </thead>
-          <tbody>
-            {roles.map((role) => (
-              <tr
-                key={role.id}
-                onClick={() => selectRole(role)}
-                style={{ cursor: "pointer", backgroundColor: role.id === selectedRoleId ? "#f2f2f2" : "transparent" }}
-              >
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{role.id}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{role.name}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{role.context7_enabled ? "on" : "off"}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{role.allowed_tools.join(", ") || "-"}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{role.skill_packs.join(", ") || "-"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16, display: activeTab === "skills" ? "block" : "none" }}>
-        <h2>Skill Packs</h2>
-        <form onSubmit={onCreateSkillPack} style={{ marginBottom: 12 }}>
-          <label>
-            Name
-            <input value={skillPackName} onChange={(e) => setSkillPackName(e.target.value)} style={{ marginLeft: 8 }} />
-          </label>
-          <button type="submit" style={{ marginLeft: 16 }}>
-            Create skill pack
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={onUpdateSkillPack} disabled={selectedSkillPackId === null}>
-            Update selected
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={onDeleteSkillPack} disabled={selectedSkillPackId === null}>
-            Delete selected
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={() => void loadSkillPacks()}>
-            Refresh
-          </button>
-          <div style={{ marginTop: 8 }}>
-            <label>
-              Skills (comma/newline)
-              <input
-                value={skillPackSkillsInput}
-                onChange={(e) => setSkillPackSkillsInput(e.target.value)}
-                style={{ marginLeft: 8, width: 540 }}
-                placeholder="skills/task-governance, skills/api-orchestrator-fastapi"
-              />
-            </label>
-          </div>
-        </form>
-
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>id</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>name</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>skills</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>used by roles</th>
-            </tr>
-          </thead>
-          <tbody>
-            {skillPacks.map((pack) => (
-              <tr
-                key={pack.id}
-                onClick={() => selectSkillPack(pack)}
-                style={{ cursor: "pointer", backgroundColor: pack.id === selectedSkillPackId ? "#f2f2f2" : "transparent" }}
-              >
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{pack.id}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{pack.name}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{pack.skills.join(", ") || "-"}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>
-                  {pack.used_by_role_ids.map((roleId) => roleNameById[roleId] ?? String(roleId)).join(", ") || "-"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16, display: activeTab === "workflows" ? "block" : "none" }}>
-        <h2>Workflow Templates</h2>
-        <form onSubmit={onCreateWorkflow}>
-          <label>
-            Name
-            <input value={workflowName} onChange={(e) => setWorkflowName(e.target.value)} style={{ marginLeft: 8 }} />
-          </label>
-          <label style={{ marginLeft: 16 }}>
-            Project ID
-            <input
-              value={workflowProjectIdInput}
-              onChange={(e) => setWorkflowProjectIdInput(e.target.value)}
-              style={{ marginLeft: 8, width: 100 }}
-              placeholder="optional"
-            />
-          </label>
-          <button type="submit" style={{ marginLeft: 16 }}>
-            Create workflow
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={onUpdateWorkflow} disabled={selectedWorkflowId === null}>
-            Update selected
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={onDeleteWorkflow} disabled={selectedWorkflowId === null}>
-            Delete selected
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={() => void loadWorkflows()}>
-            Refresh
-          </button>
-          <div style={{ marginTop: 12 }}>
-            <label>
-              Steps JSON
-              <textarea
-                value={workflowStepsJson}
-                onChange={(e) => setWorkflowStepsJson(e.target.value)}
-                rows={10}
-                style={{ display: "block", width: "100%", marginTop: 6, fontFamily: "inherit" }}
-              />
-            </label>
-          </div>
-        </form>
-
-        <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>id</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>name</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>project</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>steps</th>
-            </tr>
-          </thead>
-          <tbody>
-            {workflows.map((workflow) => (
-              <tr
-                key={workflow.id}
-                onClick={() => selectWorkflow(workflow)}
-                style={{ cursor: "pointer", backgroundColor: workflow.id === selectedWorkflowId ? "#f2f2f2" : "transparent" }}
-              >
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{workflow.id}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{workflow.name}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{workflow.project_id ?? "-"}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{workflow.steps.length}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16, display: activeTab === "runs" ? "block" : "none" }}>
-        <h2>Workflow Runs and Timeline</h2>
-        <form onSubmit={onCreateWorkflowRun}>
-          <label>
-            Workflow template ID
-            <input
-              value={runWorkflowTemplateIdInput}
-              onChange={(e) => setRunWorkflowTemplateIdInput(e.target.value)}
-              style={{ marginLeft: 8, width: 120 }}
-              placeholder="optional"
-            />
-          </label>
-          <label style={{ marginLeft: 16 }}>
-            Task IDs (comma/newline)
-            <input
-              value={runTaskIdsInput}
-              onChange={(e) => setRunTaskIdsInput(e.target.value)}
-              style={{ marginLeft: 8, width: 220 }}
-              placeholder="1,2"
-            />
-          </label>
-          <label style={{ marginLeft: 16 }}>
-            Initiated by
-            <input value={runInitiatedBy} onChange={(e) => setRunInitiatedBy(e.target.value)} style={{ marginLeft: 8, width: 120 }} />
-          </label>
-          <button type="submit" style={{ marginLeft: 16 }}>
-            Create run
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={() => void loadWorkflowRuns()}>
-            Refresh runs
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={() => void onRefreshTimeline()}>
-            Refresh timeline
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={() => void onRunAction("pause")} disabled={selectedRunId === null}>
-            Pause run
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={() => void onRunAction("resume")} disabled={selectedRunId === null}>
-            Resume run
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={() => void onRunAction("abort")} disabled={selectedRunId === null}>
-            Abort run
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={onDispatchReadyTask} disabled={selectedRunId === null}>
-            Dispatch ready task
-          </button>
-        </form>
-
-        <div style={{ marginTop: 10 }}>
-          <label>
-            Search runs
-            <input
-              value={runSearchInput}
-              onChange={(e) => setRunSearchInput(e.target.value)}
-              style={{ marginLeft: 8, width: 240 }}
-              placeholder="id/status/template"
-            />
-          </label>
-        </div>
-
-        <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>id</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>status</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>template</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>tasks</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredRuns.map((run) => (
-              <tr
-                key={run.id}
-                onClick={() => {
-                  setSelectedRunId(run.id);
-                  setTaskFilterRunIdInput(String(run.id));
-                  void loadTasks(run.id);
-                  void loadTimelineEvents(run.id, null);
-                }}
-                style={{ cursor: "pointer", backgroundColor: run.id === selectedRunId ? "#f2f2f2" : "transparent" }}
-              >
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{run.id}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{run.status}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{run.workflow_template_id ?? "-"}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{run.task_ids.join(", ") || "-"}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{run.updated_at}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        <div style={{ marginTop: 12 }}>
-          <strong>Selected run:</strong> {selectedRun ? `${selectedRun.id} (${selectedRun.status})` : "none"}
-        </div>
-        {runDispatchResult && <pre style={{ marginTop: 8 }}>{JSON.stringify(runDispatchResult, null, 2)}</pre>}
-        <pre style={{ marginTop: 8 }}>{JSON.stringify(timelineEvents, null, 2)}</pre>
-      </section>
-
-      <section style={{ border: "1px solid #ddd", padding: 16, marginBottom: 16, display: activeTab === "tasks" ? "block" : "none" }}>
-        <h2>Task Explorer</h2>
-        <label>
-          Run ID filter
-          <input
-            value={taskFilterRunIdInput}
-            onChange={(e) => setTaskFilterRunIdInput(e.target.value)}
-            style={{ marginLeft: 8, width: 120 }}
-            placeholder="optional"
-          />
-        </label>
-        <label style={{ marginLeft: 8 }}>
-          Search
-          <input
-            value={taskSearchInput}
-            onChange={(e) => setTaskSearchInput(e.target.value)}
-            style={{ marginLeft: 8, width: 220 }}
-            placeholder="id/title/status"
-          />
-        </label>
-        <button type="button" style={{ marginLeft: 8 }} onClick={() => void onRefreshTasks()}>
-          Refresh tasks
-        </button>
-        <button
-          type="button"
-          style={{ marginLeft: 8 }}
-          onClick={() => {
-            setTaskFilterRunIdInput("");
-            setTaskSearchInput("");
-            void loadTasks();
-          }}
-        >
-          Clear filter
-        </button>
-        <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>id</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>title</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>status</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>mode</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>role</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>project</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredTasks.map((item) => (
-              <tr
-                key={item.id}
-                onClick={() => {
-                  setTask(item);
-                  if (item.requires_approval) {
-                    void loadTaskApproval(item.id);
-                  } else {
-                    setTaskApproval(null);
-                  }
-                  void loadTimelineEvents(selectedRunId, item.id);
-                }}
-                style={{ cursor: "pointer", backgroundColor: task?.id === item.id ? "#f2f2f2" : "transparent" }}
-              >
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{item.id}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{item.title}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{item.status}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{item.execution_mode}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{item.role_id}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{item.project_id ?? "-"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      <section
-        style={{
-          border: "1px solid #ddd",
-          padding: 16,
-          marginBottom: 16,
-          opacity: canCreateTask ? 1 : 0.6,
-          display: activeTab === "tasks" ? "block" : "none"
-        }}
-      >
-        <h2>Create Task</h2>
-        <form onSubmit={onCreateTask}>
-          <label>
-            Role
-            <select
-              value={selectedRoleId ?? ""}
-              onChange={(e) => {
-                if (e.target.value === "") {
-                  setSelectedRoleId(null);
-                  return;
+        <nav className="mb-6 flex flex-wrap gap-2">
+          {UI_TABS.map((tab) => {
+            const active = tab.id === activeTab;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={
+                  active
+                    ? "rounded-lg border border-blue-500 bg-blue-600 px-3 py-2 text-sm font-medium text-white"
+                    : "rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-200 hover:border-slate-500 hover:bg-slate-800"
                 }
-                const parsed = Number(e.target.value);
-                const nextRole = roles.find((role) => role.id === parsed);
-                if (nextRole) {
-                  selectRole(nextRole);
-                }
-              }}
-              style={{ marginLeft: 8, minWidth: 220 }}
-            >
-              <option value="">select role</option>
-              {roles.map((role) => (
-                <option key={role.id} value={String(role.id)}>
-                  {role.id}: {role.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label style={{ marginLeft: 16 }}>
-            Title
-            <input value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} style={{ marginLeft: 8 }} disabled={!canCreateTask} />
-          </label>
-          <label style={{ marginLeft: 16 }}>
-            Context7 mode
-            <select value={taskMode} onChange={(e) => setTaskMode(e.target.value as Context7Mode)} style={{ marginLeft: 8 }} disabled={!canCreateTask}>
-              <option value="inherit">inherit</option>
-              <option value="force_on">force_on</option>
-              <option value="force_off">force_off</option>
-            </select>
-          </label>
-          <label style={{ marginLeft: 16 }}>
-            Execution mode
-            <select
-              value={taskExecutionMode}
-              onChange={(e) => setTaskExecutionMode(e.target.value as ExecutionMode)}
-              style={{ marginLeft: 8 }}
-              disabled={!canCreateTask}
-            >
-              <option value="no-workspace">no-workspace</option>
-              <option value="shared-workspace">shared-workspace</option>
-              <option value="isolated-worktree">isolated-worktree</option>
-              <option value="docker-sandbox">docker-sandbox</option>
-            </select>
-          </label>
-          <label style={{ marginLeft: 16 }}>
-            Requires approval
-            <input
-              type="checkbox"
-              checked={taskRequiresApproval}
-              onChange={(e) => setTaskRequiresApproval(e.target.checked)}
-              style={{ marginLeft: 8 }}
-              disabled={!canCreateTask}
-            />
-          </label>
-          <label style={{ marginLeft: 16 }}>
-            Project ID
-            <input
-              value={taskProjectIdInput}
-              onChange={(e) => setTaskProjectIdInput(e.target.value)}
-              style={{ marginLeft: 8, width: 100 }}
-              disabled={!canCreateTask}
-              placeholder="shared mode"
-            />
-          </label>
-          <button type="submit" style={{ marginLeft: 16 }} disabled={!canCreateTask}>
-            Save task
-          </button>
-          <button type="button" style={{ marginLeft: 8 }} onClick={() => void loadProjects()}>
-            Refresh projects
-          </button>
-          <div style={{ marginTop: 12 }}>
-            <label>
-              Lock paths (newline or comma separated)
-              <textarea
-                value={taskLockPathsInput}
-                onChange={(e) => setTaskLockPathsInput(e.target.value)}
-                rows={3}
-                style={{ display: "block", width: "100%", marginTop: 6, fontFamily: "inherit" }}
-                placeholder="/abs/path/one&#10;/abs/path/two"
-                disabled={!canCreateTask}
-              />
-            </label>
-          </div>
-        </form>
-        {projects.length > 0 && (
-          <div style={{ marginTop: 8 }}>
-            <strong>Known projects:</strong>{" "}
-            {projects.map((project) => `${project.id}:${project.name}`).join(", ")}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        {error && (
+          <div className="mb-4 rounded-lg border border-rose-600/50 bg-rose-950/50 px-3 py-2 text-sm text-rose-200">
+            Error: {error}
           </div>
         )}
-        {task && <pre>{JSON.stringify(task, null, 2)}</pre>}
-      </section>
 
-      <section style={{ border: "1px solid #ddd", padding: 16, display: activeTab === "tasks" ? "block" : "none" }}>
-        <h2>Dispatch and Audit</h2>
-        <button onClick={onDispatch} disabled={!canDispatch}>
-          Dispatch task
-        </button>
-        <button onClick={onCancelTask} style={{ marginLeft: 8 }} disabled={!task}>
-          Cancel task
-        </button>
-        <button onClick={onRefreshTask} style={{ marginLeft: 8 }} disabled={!task}>
-          Refresh task
-        </button>
-        <button
-          type="button"
-          style={{ marginLeft: 8 }}
-          disabled={!task?.requires_approval}
-          onClick={() => {
-            if (task) {
-              void loadTaskApproval(task.id);
-            }
-            setActiveTab("approvals");
-          }}
-        >
-          Open approval
-        </button>
-        {dispatchResult && <pre>{JSON.stringify(dispatchResult, null, 2)}</pre>}
-        {audit && <pre>{JSON.stringify(audit, null, 2)}</pre>}
-        {taskApproval && <pre>{JSON.stringify(taskApproval, null, 2)}</pre>}
-      </section>
+        {activeTab === "overview" && (
+          <section className={sectionClass}>
+            <h2 className="text-lg font-semibold">Overview</h2>
+            <p className="mt-1 text-sm text-slate-400">Use tabs to focus on one domain at a time.</p>
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+                <p className={labelClass}>Selected run</p>
+                <p className="mt-2 text-sm">{selectedRun ? `${selectedRun.id} (${selectedRun.status})` : "none"}</p>
+              </div>
+              <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+                <p className={labelClass}>Selected task</p>
+                <p className="mt-2 text-sm">{task ? `${task.id} (${task.status})` : "none"}</p>
+              </div>
+              <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+                <p className={labelClass}>Selected approval</p>
+                <p className="mt-2 text-sm">{selectedApproval ? `${selectedApproval.id} (${selectedApproval.status})` : "none"}</p>
+              </div>
+            </div>
+          </section>
+        )}
 
-      <section style={{ border: "1px solid #ddd", padding: 16, marginTop: 16, display: activeTab === "approvals" ? "block" : "none" }}>
-        <h2>Approvals Inbox</h2>
-        <div>
-          <button type="button" onClick={() => void refreshApprovals()}>
-            Refresh approvals
-          </button>
-          <label style={{ marginLeft: 8 }}>
-            Approval ID
-            <input
-              value={approvalLookupIdInput}
-              onChange={(e) => setApprovalLookupIdInput(e.target.value)}
-              style={{ marginLeft: 8, width: 100 }}
-            />
-          </label>
-          <button type="button" style={{ marginLeft: 8 }} onClick={() => void onLookupApprovalById()}>
-            Load by id
-          </button>
-        </div>
+        {activeTab === "projects" && (
+          <section className={sectionClass}>
+            <h2 className="text-lg font-semibold">Projects</h2>
+            <form className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4" onSubmit={onCreateProject}>
+              <label className="md:col-span-1">
+                <span className={labelClass}>Name</span>
+                <input className={inputClass} value={projectName} onChange={(e) => setProjectName(e.target.value)} />
+              </label>
+              <label className="md:col-span-1 xl:col-span-2">
+                <span className={labelClass}>Root path</span>
+                <input className={inputClass} value={projectRootPath} onChange={(e) => setProjectRootPath(e.target.value)} />
+              </label>
+              <label className="md:col-span-2 xl:col-span-4">
+                <span className={labelClass}>Allowed paths (comma/newline)</span>
+                <input className={inputClass} value={projectAllowedPathsInput} onChange={(e) => setProjectAllowedPathsInput(e.target.value)} />
+              </label>
+              <div className="md:col-span-2 xl:col-span-4 flex flex-wrap gap-2">
+                <button type="submit" className={primaryButtonClass}>Create</button>
+                <button type="button" className={buttonClass} onClick={onUpdateProject} disabled={selectedProjectId === null}>Update selected</button>
+                <button type="button" className={buttonClass} onClick={onDeleteProject} disabled={selectedProjectId === null}>Delete selected</button>
+                <button type="button" className={buttonClass} onClick={() => void loadProjects()}>Refresh</button>
+              </div>
+            </form>
 
-        <div style={{ marginTop: 10 }}>
-          <label>
-            Actor
-            <input
-              value={approvalActor}
-              onChange={(e) => setApprovalActor(e.target.value)}
-              style={{ marginLeft: 8, width: 180 }}
-            />
-          </label>
-          <label style={{ marginLeft: 12 }}>
-            Comment
-            <input
-              value={approvalComment}
-              onChange={(e) => setApprovalComment(e.target.value)}
-              style={{ marginLeft: 8, width: 300 }}
-            />
-          </label>
-          <button
-            type="button"
-            style={{ marginLeft: 8 }}
-            onClick={() => void onApprovalDecision("approve")}
-            disabled={selectedApproval?.status !== "pending"}
-          >
-            Approve
-          </button>
-          <button
-            type="button"
-            style={{ marginLeft: 8 }}
-            onClick={() => void onApprovalDecision("reject")}
-            disabled={selectedApproval?.status !== "pending"}
-          >
-            Reject
-          </button>
-        </div>
+            <div className="mt-4 overflow-x-auto">
+              <table className={tableClass}>
+                <thead>
+                  <tr>
+                    <th className={thClass}>id</th>
+                    <th className={thClass}>name</th>
+                    <th className={thClass}>root</th>
+                    <th className={thClass}>allowed paths</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {projects.map((project) => (
+                    <tr
+                      key={project.id}
+                      onClick={() => selectProject(project)}
+                      className={`cursor-pointer ${project.id === selectedProjectId ? "bg-blue-500/10" : "hover:bg-slate-800/50"}`}
+                    >
+                      <td className={tdClass}>{project.id}</td>
+                      <td className={tdClass}>{project.name}</td>
+                      <td className={tdClass}>{project.root_path}</td>
+                      <td className={tdClass}>{project.allowed_paths.join(", ")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
 
-        <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>id</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>task</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>status</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>decided by</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>comment</th>
-            </tr>
-          </thead>
-          <tbody>
-            {approvals.map((approval) => (
-              <tr
-                key={approval.id}
-                onClick={() => {
-                  setSelectedApprovalId(approval.id);
-                  setTaskApproval(approval);
-                }}
-                style={{ cursor: "pointer", backgroundColor: selectedApproval?.id === approval.id ? "#f2f2f2" : "transparent" }}
-              >
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{approval.id}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{approval.task_id}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{approval.status}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{approval.decided_by ?? "-"}</td>
-                <td style={{ borderBottom: "1px solid #eee", padding: "4px 0" }}>{approval.comment ?? "-"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+        {activeTab === "roles" && (
+          <section className={sectionClass}>
+            <h2 className="text-lg font-semibold">Roles</h2>
+            <form className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4" onSubmit={onCreateRole}>
+              <label>
+                <span className={labelClass}>Role name</span>
+                <input className={inputClass} value={roleName} onChange={(e) => setRoleName(e.target.value)} />
+              </label>
+              <label className="flex items-end gap-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
+                <input type="checkbox" checked={roleContext7Enabled} onChange={(e) => setRoleContext7Enabled(e.target.checked)} />
+                <span className="text-sm text-slate-200">Context7 default</span>
+              </label>
+              <label className="xl:col-span-2">
+                <span className={labelClass}>Allowed tools (comma/newline)</span>
+                <input className={inputClass} value={roleAllowedToolsInput} onChange={(e) => setRoleAllowedToolsInput(e.target.value)} />
+              </label>
+              <label className="md:col-span-2 xl:col-span-4">
+                <span className={labelClass}>System prompt</span>
+                <textarea className={textareaClass} rows={3} value={roleSystemPrompt} onChange={(e) => setRoleSystemPrompt(e.target.value)} />
+              </label>
+              <label className="md:col-span-2 xl:col-span-2">
+                <span className={labelClass}>Skill packs (comma/newline)</span>
+                <input className={inputClass} value={roleSkillPacksInput} onChange={(e) => setRoleSkillPacksInput(e.target.value)} />
+              </label>
+              <label className="md:col-span-2 xl:col-span-2">
+                <span className={labelClass}>Execution constraints JSON</span>
+                <textarea className={textareaClass} rows={3} value={roleConstraintsJson} onChange={(e) => setRoleConstraintsJson(e.target.value)} />
+              </label>
+              <div className="md:col-span-2 xl:col-span-4 flex flex-wrap gap-2">
+                <button type="submit" className={primaryButtonClass}>Create</button>
+                <button type="button" className={buttonClass} onClick={onUpdateRole} disabled={selectedRoleId === null}>Update selected</button>
+                <button type="button" className={buttonClass} onClick={onDeleteRole} disabled={selectedRoleId === null}>Delete selected</button>
+                <button type="button" className={buttonClass} onClick={() => void loadRoles()}>Refresh</button>
+              </div>
+            </form>
 
-      {error && (
-        <p style={{ color: "#a00000", marginTop: 16 }}>
-          Error: {error}
-        </p>
-      )}
+            <div className="mt-2 text-xs text-slate-400">Available skill packs: {skillPacks.map((pack) => pack.name).join(", ") || "none"}</div>
+
+            <div className="mt-4 overflow-x-auto">
+              <table className={tableClass}>
+                <thead>
+                  <tr>
+                    <th className={thClass}>id</th>
+                    <th className={thClass}>name</th>
+                    <th className={thClass}>context7</th>
+                    <th className={thClass}>tools</th>
+                    <th className={thClass}>skill packs</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {roles.map((role) => (
+                    <tr
+                      key={role.id}
+                      onClick={() => selectRole(role)}
+                      className={`cursor-pointer ${role.id === selectedRoleId ? "bg-blue-500/10" : "hover:bg-slate-800/50"}`}
+                    >
+                      <td className={tdClass}>{role.id}</td>
+                      <td className={tdClass}>{role.name}</td>
+                      <td className={tdClass}>{role.context7_enabled ? "on" : "off"}</td>
+                      <td className={tdClass}>{role.allowed_tools.join(", ") || "-"}</td>
+                      <td className={tdClass}>{role.skill_packs.join(", ") || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {activeTab === "skills" && (
+          <section className={sectionClass}>
+            <h2 className="text-lg font-semibold">Skill Packs</h2>
+            <form className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4" onSubmit={onCreateSkillPack}>
+              <label>
+                <span className={labelClass}>Name</span>
+                <input className={inputClass} value={skillPackName} onChange={(e) => setSkillPackName(e.target.value)} />
+              </label>
+              <label className="md:col-span-2 xl:col-span-3">
+                <span className={labelClass}>Skills (comma/newline)</span>
+                <input className={inputClass} value={skillPackSkillsInput} onChange={(e) => setSkillPackSkillsInput(e.target.value)} />
+              </label>
+              <div className="md:col-span-2 xl:col-span-4 flex flex-wrap gap-2">
+                <button type="submit" className={primaryButtonClass}>Create</button>
+                <button type="button" className={buttonClass} onClick={onUpdateSkillPack} disabled={selectedSkillPackId === null}>Update selected</button>
+                <button type="button" className={buttonClass} onClick={onDeleteSkillPack} disabled={selectedSkillPackId === null}>Delete selected</button>
+                <button type="button" className={buttonClass} onClick={() => void loadSkillPacks()}>Refresh</button>
+              </div>
+            </form>
+
+            <div className="mt-4 overflow-x-auto">
+              <table className={tableClass}>
+                <thead>
+                  <tr>
+                    <th className={thClass}>id</th>
+                    <th className={thClass}>name</th>
+                    <th className={thClass}>skills</th>
+                    <th className={thClass}>used by roles</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {skillPacks.map((pack) => (
+                    <tr
+                      key={pack.id}
+                      onClick={() => selectSkillPack(pack)}
+                      className={`cursor-pointer ${pack.id === selectedSkillPackId ? "bg-blue-500/10" : "hover:bg-slate-800/50"}`}
+                    >
+                      <td className={tdClass}>{pack.id}</td>
+                      <td className={tdClass}>{pack.name}</td>
+                      <td className={tdClass}>{pack.skills.join(", ") || "-"}</td>
+                      <td className={tdClass}>{pack.used_by_role_ids.map((roleId) => roleNameById[roleId] ?? String(roleId)).join(", ") || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {activeTab === "workflows" && (
+          <section className={sectionClass}>
+            <h2 className="text-lg font-semibold">Workflow Templates</h2>
+            <form className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4" onSubmit={onCreateWorkflow}>
+              <label>
+                <span className={labelClass}>Name</span>
+                <input className={inputClass} value={workflowName} onChange={(e) => setWorkflowName(e.target.value)} />
+              </label>
+              <label>
+                <span className={labelClass}>Project ID</span>
+                <input className={inputClass} value={workflowProjectIdInput} onChange={(e) => setWorkflowProjectIdInput(e.target.value)} placeholder="optional" />
+              </label>
+              <div className="md:col-span-2 xl:col-span-2 flex flex-wrap items-end gap-2">
+                <button type="submit" className={primaryButtonClass}>Create</button>
+                <button type="button" className={buttonClass} onClick={onUpdateWorkflow} disabled={selectedWorkflowId === null}>Update selected</button>
+                <button type="button" className={buttonClass} onClick={onDeleteWorkflow} disabled={selectedWorkflowId === null}>Delete selected</button>
+                <button type="button" className={buttonClass} onClick={() => void loadWorkflows()}>Refresh</button>
+              </div>
+              <label className="md:col-span-2 xl:col-span-4">
+                <span className={labelClass}>Steps JSON</span>
+                <textarea className={textareaClass} rows={10} value={workflowStepsJson} onChange={(e) => setWorkflowStepsJson(e.target.value)} />
+              </label>
+            </form>
+
+            <div className="mt-4 overflow-x-auto">
+              <table className={tableClass}>
+                <thead>
+                  <tr>
+                    <th className={thClass}>id</th>
+                    <th className={thClass}>name</th>
+                    <th className={thClass}>project</th>
+                    <th className={thClass}>steps</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {workflows.map((workflow) => (
+                    <tr
+                      key={workflow.id}
+                      onClick={() => selectWorkflow(workflow)}
+                      className={`cursor-pointer ${workflow.id === selectedWorkflowId ? "bg-blue-500/10" : "hover:bg-slate-800/50"}`}
+                    >
+                      <td className={tdClass}>{workflow.id}</td>
+                      <td className={tdClass}>{workflow.name}</td>
+                      <td className={tdClass}>{workflow.project_id ?? "-"}</td>
+                      <td className={tdClass}>{workflow.steps.length}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {activeTab === "runs" && (
+          <section className={sectionClass}>
+            <h2 className="text-lg font-semibold">Workflow Runs and Timeline</h2>
+            <form className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4" onSubmit={onCreateWorkflowRun}>
+              <label>
+                <span className={labelClass}>Workflow template ID</span>
+                <input className={inputClass} value={runWorkflowTemplateIdInput} onChange={(e) => setRunWorkflowTemplateIdInput(e.target.value)} placeholder="optional" />
+              </label>
+              <label>
+                <span className={labelClass}>Task IDs (comma/newline)</span>
+                <input className={inputClass} value={runTaskIdsInput} onChange={(e) => setRunTaskIdsInput(e.target.value)} placeholder="1,2" />
+              </label>
+              <label>
+                <span className={labelClass}>Initiated by</span>
+                <input className={inputClass} value={runInitiatedBy} onChange={(e) => setRunInitiatedBy(e.target.value)} />
+              </label>
+              <label>
+                <span className={labelClass}>Search runs</span>
+                <input className={inputClass} value={runSearchInput} onChange={(e) => setRunSearchInput(e.target.value)} placeholder="id/status/template" />
+              </label>
+              <div className="md:col-span-2 xl:col-span-4 flex flex-wrap gap-2">
+                <button type="submit" className={primaryButtonClass}>Create run</button>
+                <button type="button" className={buttonClass} onClick={() => void loadWorkflowRuns()}>Refresh runs</button>
+                <button type="button" className={buttonClass} onClick={() => void onRefreshTimeline()}>Refresh timeline</button>
+                <button type="button" className={buttonClass} onClick={() => void onRunAction("pause")} disabled={selectedRunId === null}>Pause run</button>
+                <button type="button" className={buttonClass} onClick={() => void onRunAction("resume")} disabled={selectedRunId === null}>Resume run</button>
+                <button type="button" className={buttonClass} onClick={() => void onRunAction("abort")} disabled={selectedRunId === null}>Abort run</button>
+                <button type="button" className={buttonClass} onClick={onDispatchReadyTask} disabled={selectedRunId === null}>Dispatch ready task</button>
+              </div>
+            </form>
+
+            <div className="mt-4 overflow-x-auto">
+              <table className={tableClass}>
+                <thead>
+                  <tr>
+                    <th className={thClass}>id</th>
+                    <th className={thClass}>status</th>
+                    <th className={thClass}>template</th>
+                    <th className={thClass}>tasks</th>
+                    <th className={thClass}>updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRuns.map((run) => (
+                    <tr
+                      key={run.id}
+                      onClick={() => {
+                        setSelectedRunId(run.id);
+                        setTaskFilterRunIdInput(String(run.id));
+                        void loadTasks(run.id);
+                        void loadTimelineEvents(run.id, null);
+                      }}
+                      className={`cursor-pointer ${run.id === selectedRunId ? "bg-blue-500/10" : "hover:bg-slate-800/50"}`}
+                    >
+                      <td className={tdClass}>{run.id}</td>
+                      <td className={tdClass}>{run.status}</td>
+                      <td className={tdClass}>{run.workflow_template_id ?? "-"}</td>
+                      <td className={tdClass}>{run.task_ids.join(", ") || "-"}</td>
+                      <td className={tdClass}>{run.updated_at}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <div>
+                <p className="text-sm text-slate-300">Selected run: {selectedRun ? `${selectedRun.id} (${selectedRun.status})` : "none"}</p>
+                {runDispatchResult && (
+                  <pre className="mt-2 max-h-72 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300">
+                    {JSON.stringify(runDispatchResult, null, 2)}
+                  </pre>
+                )}
+              </div>
+              <pre className="max-h-72 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300">
+                {JSON.stringify(timelineEvents, null, 2)}
+              </pre>
+            </div>
+          </section>
+        )}
+
+        {activeTab === "tasks" && (
+          <div className="space-y-4">
+            <section className={sectionClass}>
+              <h2 className="text-lg font-semibold">Task Explorer</h2>
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-5">
+                <label>
+                  <span className={labelClass}>Run ID filter</span>
+                  <input className={inputClass} value={taskFilterRunIdInput} onChange={(e) => setTaskFilterRunIdInput(e.target.value)} placeholder="optional" />
+                </label>
+                <label className="md:col-span-2 xl:col-span-2">
+                  <span className={labelClass}>Search tasks</span>
+                  <input className={inputClass} value={taskSearchInput} onChange={(e) => setTaskSearchInput(e.target.value)} placeholder="id/title/status" />
+                </label>
+                <div className="md:col-span-3 xl:col-span-2 flex flex-wrap items-end gap-2">
+                  <button type="button" className={buttonClass} onClick={() => void onRefreshTasks()}>Refresh tasks</button>
+                  <button
+                    type="button"
+                    className={buttonClass}
+                    onClick={() => {
+                      setTaskFilterRunIdInput("");
+                      setTaskSearchInput("");
+                      void loadTasks();
+                    }}
+                  >
+                    Clear filter
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 overflow-x-auto">
+                <table className={tableClass}>
+                  <thead>
+                    <tr>
+                      <th className={thClass}>id</th>
+                      <th className={thClass}>title</th>
+                      <th className={thClass}>status</th>
+                      <th className={thClass}>mode</th>
+                      <th className={thClass}>role</th>
+                      <th className={thClass}>project</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredTasks.map((item) => (
+                      <tr
+                        key={item.id}
+                        onClick={() => {
+                          setTask(item);
+                          if (item.requires_approval) {
+                            void loadTaskApproval(item.id);
+                          } else {
+                            setTaskApproval(null);
+                          }
+                          void loadTimelineEvents(selectedRunId, item.id);
+                        }}
+                        className={`cursor-pointer ${task?.id === item.id ? "bg-blue-500/10" : "hover:bg-slate-800/50"}`}
+                      >
+                        <td className={tdClass}>{item.id}</td>
+                        <td className={tdClass}>{item.title}</td>
+                        <td className={tdClass}>{item.status}</td>
+                        <td className={tdClass}>{item.execution_mode}</td>
+                        <td className={tdClass}>{item.role_id}</td>
+                        <td className={tdClass}>{item.project_id ?? "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className={sectionClass}>
+              <h2 className="text-lg font-semibold">Create Task</h2>
+              <form className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4" onSubmit={onCreateTask}>
+                <label>
+                  <span className={labelClass}>Role</span>
+                  <select
+                    className={inputClass}
+                    value={selectedRoleId ?? ""}
+                    onChange={(e) => {
+                      if (e.target.value === "") {
+                        setSelectedRoleId(null);
+                        return;
+                      }
+                      const parsed = Number(e.target.value);
+                      const nextRole = roles.find((role) => role.id === parsed);
+                      if (nextRole) {
+                        selectRole(nextRole);
+                      }
+                    }}
+                  >
+                    <option value="">select role</option>
+                    {roles.map((role) => (
+                      <option key={role.id} value={String(role.id)}>
+                        {role.id}: {role.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span className={labelClass}>Title</span>
+                  <input className={inputClass} value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} disabled={!canCreateTask} />
+                </label>
+                <label>
+                  <span className={labelClass}>Context7 mode</span>
+                  <select className={inputClass} value={taskMode} onChange={(e) => setTaskMode(e.target.value as Context7Mode)} disabled={!canCreateTask}>
+                    <option value="inherit">inherit</option>
+                    <option value="force_on">force_on</option>
+                    <option value="force_off">force_off</option>
+                  </select>
+                </label>
+                <label>
+                  <span className={labelClass}>Execution mode</span>
+                  <select
+                    className={inputClass}
+                    value={taskExecutionMode}
+                    onChange={(e) => setTaskExecutionMode(e.target.value as ExecutionMode)}
+                    disabled={!canCreateTask}
+                  >
+                    <option value="no-workspace">no-workspace</option>
+                    <option value="shared-workspace">shared-workspace</option>
+                    <option value="isolated-worktree">isolated-worktree</option>
+                    <option value="docker-sandbox">docker-sandbox</option>
+                  </select>
+                </label>
+                <label>
+                  <span className={labelClass}>Project ID</span>
+                  <input className={inputClass} value={taskProjectIdInput} onChange={(e) => setTaskProjectIdInput(e.target.value)} disabled={!canCreateTask} placeholder="optional" />
+                </label>
+                <label className="flex items-end gap-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={taskRequiresApproval}
+                    onChange={(e) => setTaskRequiresApproval(e.target.checked)}
+                    disabled={!canCreateTask}
+                  />
+                  <span className="text-sm text-slate-200">Requires approval</span>
+                </label>
+                <label className="md:col-span-2 xl:col-span-4">
+                  <span className={labelClass}>Lock paths (comma/newline)</span>
+                  <textarea
+                    className={textareaClass}
+                    value={taskLockPathsInput}
+                    onChange={(e) => setTaskLockPathsInput(e.target.value)}
+                    rows={3}
+                    placeholder="/abs/path/one&#10;/abs/path/two"
+                    disabled={!canCreateTask}
+                  />
+                </label>
+                <div className="md:col-span-2 xl:col-span-4 flex flex-wrap gap-2">
+                  <button type="submit" className={primaryButtonClass} disabled={!canCreateTask}>Save task</button>
+                  <button type="button" className={buttonClass} onClick={() => void loadProjects()}>Refresh projects</button>
+                </div>
+              </form>
+              {projects.length > 0 && (
+                <p className="mt-2 text-xs text-slate-400">Known projects: {projects.map((project) => `${project.id}:${project.name}`).join(", ")}</p>
+              )}
+              {task && <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300">{JSON.stringify(task, null, 2)}</pre>}
+            </section>
+
+            <section className={sectionClass}>
+              <h2 className="text-lg font-semibold">Dispatch and Audit</h2>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button className={primaryButtonClass} onClick={onDispatch} disabled={!canDispatch}>Dispatch task</button>
+                <button className={buttonClass} onClick={onCancelTask} disabled={!task}>Cancel task</button>
+                <button className={buttonClass} onClick={onRefreshTask} disabled={!task}>Refresh task</button>
+                <button
+                  type="button"
+                  className={buttonClass}
+                  disabled={!task?.requires_approval}
+                  onClick={() => {
+                    if (task) {
+                      void loadTaskApproval(task.id);
+                    }
+                    setActiveTab("approvals");
+                  }}
+                >
+                  Open approval
+                </button>
+              </div>
+              {dispatchResult && <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300">{JSON.stringify(dispatchResult, null, 2)}</pre>}
+              {audit && <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300">{JSON.stringify(audit, null, 2)}</pre>}
+              {taskApproval && <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300">{JSON.stringify(taskApproval, null, 2)}</pre>}
+            </section>
+          </div>
+        )}
+
+        {activeTab === "approvals" && (
+          <section className={sectionClass}>
+            <h2 className="text-lg font-semibold">Approvals Inbox</h2>
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="flex flex-wrap items-end gap-2">
+                <button type="button" className={buttonClass} onClick={() => void refreshApprovals()}>
+                  Refresh approvals
+                </button>
+              </div>
+              <label>
+                <span className={labelClass}>Approval ID</span>
+                <input className={inputClass} value={approvalLookupIdInput} onChange={(e) => setApprovalLookupIdInput(e.target.value)} />
+              </label>
+              <div className="flex items-end">
+                <button type="button" className={buttonClass} onClick={() => void onLookupApprovalById()}>
+                  Load by ID
+                </button>
+              </div>
+              <div />
+              <label>
+                <span className={labelClass}>Actor</span>
+                <input className={inputClass} value={approvalActor} onChange={(e) => setApprovalActor(e.target.value)} />
+              </label>
+              <label className="md:col-span-2">
+                <span className={labelClass}>Comment</span>
+                <input className={inputClass} value={approvalComment} onChange={(e) => setApprovalComment(e.target.value)} />
+              </label>
+              <div className="flex flex-wrap items-end gap-2">
+                <button
+                  type="button"
+                  className={primaryButtonClass}
+                  onClick={() => void onApprovalDecision("approve")}
+                  disabled={selectedApproval?.status !== "pending"}
+                >
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  className={buttonClass}
+                  onClick={() => void onApprovalDecision("reject")}
+                  disabled={selectedApproval?.status !== "pending"}
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 overflow-x-auto">
+              <table className={tableClass}>
+                <thead>
+                  <tr>
+                    <th className={thClass}>id</th>
+                    <th className={thClass}>task</th>
+                    <th className={thClass}>status</th>
+                    <th className={thClass}>decided by</th>
+                    <th className={thClass}>comment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {approvals.map((approval) => (
+                    <tr
+                      key={approval.id}
+                      onClick={() => {
+                        setSelectedApprovalId(approval.id);
+                        setTaskApproval(approval);
+                      }}
+                      className={`cursor-pointer ${selectedApproval?.id === approval.id ? "bg-blue-500/10" : "hover:bg-slate-800/50"}`}
+                    >
+                      <td className={tdClass}>{approval.id}</td>
+                      <td className={tdClass}>{approval.task_id}</td>
+                      <td className={tdClass}>{approval.status}</td>
+                      <td className={tdClass}>{approval.decided_by ?? "-"}</td>
+                      <td className={tdClass}>{approval.comment ?? "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+      </div>
     </main>
   );
 }
