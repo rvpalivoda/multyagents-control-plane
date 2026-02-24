@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `in_progress`
+- Status: `review`
 - Priority: `P1`
 - Owner: `codex`
 - Created: `2026-02-23`
@@ -32,10 +32,10 @@ Provide full operator flow to manage skill-packs and attach them to roles from c
 
 ## Acceptance criteria
 
-- [ ] Operator can CRUD skill-packs from UI.
-- [ ] Role can reference one or more skill-packs with backend validation.
-- [ ] API returns clear errors for unknown/duplicate skills or pack names.
-- [ ] UI displays which roles use each skill-pack.
+- [x] Operator can CRUD skill-packs from UI.
+- [x] Role can reference one or more skill-packs with backend validation.
+- [x] API returns clear errors for unknown/duplicate skills or pack names.
+- [x] UI displays which roles use each skill-pack.
 
 ## Implementation notes
 
@@ -46,8 +46,8 @@ Execution lane:
 
 ## Test plan
 
-- [ ] API tests for skill-pack CRUD and role-assignment validation.
-- [ ] UI tests for create/edit/delete flows.
+- [x] API tests for skill-pack CRUD and role-assignment validation.
+- [x] UI tests for create/edit/delete flows.
 - [ ] Integration test for workflow dispatch payload including resolved skill-packs.
 
 ## Risks and mitigations
@@ -57,4 +57,17 @@ Execution lane:
 
 ## Result
 
-Planned.
+Implemented `skill_pack` management in API and UI:
+
+- Added API entity and CRUD endpoints for skill packs (`/skill-packs`).
+- Added catalog-based skill validation from `docs/SKILLS_CATALOG.md`.
+- Added role validation so `role.skill_packs` must reference existing packs.
+- Added UI section for skill-pack CRUD and role usage visibility.
+
+Execution evidence:
+
+- `apps/api`: `pytest -q` -> `63 passed`.
+- `apps/ui`: `npm run build` -> success.
+
+Commits:
+- `79be420` (`feat(task-036): add skill-pack api and ui management`)
