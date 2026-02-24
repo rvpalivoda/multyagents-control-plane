@@ -14,6 +14,14 @@ import { AdminTopBar } from "./components/AdminTopBar";
 import { ApprovalsSection } from "./components/ApprovalsSection";
 import { OverviewSection } from "./components/OverviewSection";
 import { RunsCenterSection } from "./components/RunsCenterSection";
+import {
+  createWorkflowStepDraft,
+  parseWorkflowStepsJson,
+  validateWorkflowStepDrafts,
+  workflowDraftsToSteps,
+  workflowStepsToDrafts
+} from "./components/workflowEditorUtils";
+import type { WorkflowStepDraft } from "./components/workflowEditorUtils";
 import type {
   ApprovalRead,
   DispatchResult,
@@ -91,14 +99,17 @@ async function apiGet<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-function stepsToJson(steps: WorkflowStep[]): string {
+type WorkflowEditorMode = "quick" | "json";
+
+function stepsToJson(steps: unknown[]): string {
   return JSON.stringify(steps, null, 2);
 }
 
-const DEFAULT_STEPS_JSON = stepsToJson([
+const DEFAULT_WORKFLOW_STEPS: WorkflowStep[] = [
   { step_id: "plan", role_id: 1, title: "Plan", depends_on: [] },
   { step_id: "build", role_id: 1, title: "Build", depends_on: ["plan"] }
-]);
+];
+const DEFAULT_STEPS_JSON = stepsToJson(DEFAULT_WORKFLOW_STEPS);
 
 export function App() {
   const [activeTab, setActiveTab] = useState<UiTab>("overview");
@@ -134,6 +145,10 @@ export function App() {
   const [workflowName, setWorkflowName] = useState("feature-flow");
   const [workflowProjectIdInput, setWorkflowProjectIdInput] = useState("");
   const [workflowStepsJson, setWorkflowStepsJson] = useState(DEFAULT_STEPS_JSON);
+  const [workflowEditorMode, setWorkflowEditorMode] = useState<WorkflowEditorMode>("quick");
+  const [workflowStepDrafts, setWorkflowStepDrafts] = useState<WorkflowStepDraft[]>(
+    workflowStepsToDrafts(DEFAULT_WORKFLOW_STEPS as unknown as Record<string, unknown>[])
+  );
   const [workflows, setWorkflows] = useState<WorkflowTemplateRead[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<number | null>(null);
   const [runWorkflowTemplateIdInput, setRunWorkflowTemplateIdInput] = useState("");
@@ -318,6 +333,17 @@ export function App() {
       .map((id) => taskById[id])
       .filter((item): item is TaskRead => item !== undefined);
   }, [selectedRun, taskById]);
+  const workflowStepsJsonParse = useMemo(
+    () => parseWorkflowStepsJson(workflowStepsJson),
+    [workflowStepsJson]
+  );
+  const workflowQuickValidation = useMemo(
+    () => validateWorkflowStepDrafts(workflowStepDrafts),
+    [workflowStepDrafts]
+  );
+  const canSubmitWorkflow =
+    workflowEditorMode === "quick" ? !workflowQuickValidation.hasErrors : workflowStepsJsonParse.error === null;
+  const defaultWorkflowRoleId = roles.length > 0 ? roles[0].id : null;
 
   const canCreateTask = selectedRole !== null;
   const canDispatch = task !== null;
@@ -442,7 +468,8 @@ export function App() {
     setSelectedWorkflowId(workflow.id);
     setWorkflowName(workflow.name);
     setWorkflowProjectIdInput(workflow.project_id === null ? "" : String(workflow.project_id));
-    setWorkflowStepsJson(stepsToJson(workflow.steps));
+    setWorkflowStepsJson(stepsToJson(workflow.steps as unknown as Record<string, unknown>[]));
+    setWorkflowStepDrafts(workflowStepsToDrafts(workflow.steps as unknown as Record<string, unknown>[]));
   }
 
   function selectProject(project: ProjectRead) {
@@ -461,6 +488,58 @@ export function App() {
       project_id: Number.isNaN(projectId) ? null : projectId,
       steps: parsed
     };
+  }
+
+  function applyWorkflowStepDrafts(nextDrafts: WorkflowStepDraft[]) {
+    setWorkflowStepDrafts(nextDrafts);
+    setWorkflowStepsJson(stepsToJson(workflowDraftsToSteps(nextDrafts)));
+  }
+
+  function onWorkflowEditorModeChange(nextMode: WorkflowEditorMode) {
+    if (nextMode === workflowEditorMode) {
+      return;
+    }
+    if (nextMode === "quick") {
+      if (workflowStepsJsonParse.error || !workflowStepsJsonParse.steps) {
+        setError("Steps JSON must be valid before switching to Quick create.");
+        return;
+      }
+      setWorkflowStepDrafts(workflowStepsToDrafts(workflowStepsJsonParse.steps));
+    }
+    setError(null);
+    setWorkflowEditorMode(nextMode);
+  }
+
+  function onWorkflowStepDraftChange(clientId: string, patch: Partial<WorkflowStepDraft>) {
+    applyWorkflowStepDrafts(
+      workflowStepDrafts.map((draft) => {
+        if (draft.client_id !== clientId) {
+          return draft;
+        }
+        return { ...draft, ...patch };
+      })
+    );
+  }
+
+  function onWorkflowDependencyToggle(clientId: string, dependency: string, selected: boolean) {
+    applyWorkflowStepDrafts(
+      workflowStepDrafts.map((draft) => {
+        if (draft.client_id !== clientId) {
+          return draft;
+        }
+        const existing = draft.depends_on.filter((item) => item !== dependency);
+        const depends_on = selected ? [...existing, dependency] : existing;
+        return { ...draft, depends_on };
+      })
+    );
+  }
+
+  function onWorkflowStepsJsonChange(nextValue: string) {
+    setWorkflowStepsJson(nextValue);
+    const parsed = parseWorkflowStepsJson(nextValue);
+    if (!parsed.error && parsed.steps) {
+      setWorkflowStepDrafts(workflowStepsToDrafts(parsed.steps));
+    }
   }
 
   function parseLockPaths(input: string): string[] {
@@ -953,6 +1032,10 @@ export function App() {
 
   async function onCreateWorkflow(event: FormEvent) {
     event.preventDefault();
+    if (!canSubmitWorkflow) {
+      setError("Fix workflow step validation errors before creating.");
+      return;
+    }
     setError(null);
     try {
       const created = await apiPost<WorkflowTemplateRead>("/workflow-templates", parseWorkflowPayload());
@@ -965,6 +1048,10 @@ export function App() {
 
   async function onUpdateWorkflow() {
     if (selectedWorkflowId === null) {
+      return;
+    }
+    if (!canSubmitWorkflow) {
+      setError("Fix workflow step validation errors before updating.");
       return;
     }
     setError(null);
@@ -1302,15 +1389,176 @@ export function App() {
                 <input className={inputClass} value={workflowProjectIdInput} onChange={(e) => setWorkflowProjectIdInput(e.target.value)} placeholder="optional" />
               </label>
               <div className="md:col-span-2 xl:col-span-2 flex flex-wrap items-end gap-2">
-                <button type="submit" className={primaryButtonClass}>Create</button>
-                <button type="button" className={buttonClass} onClick={onUpdateWorkflow} disabled={selectedWorkflowId === null}>Update selected</button>
+                <button type="submit" className={primaryButtonClass} disabled={!canSubmitWorkflow}>Create</button>
+                <button type="button" className={buttonClass} onClick={onUpdateWorkflow} disabled={selectedWorkflowId === null || !canSubmitWorkflow}>Update selected</button>
                 <button type="button" className={buttonClass} onClick={onDeleteWorkflow} disabled={selectedWorkflowId === null}>Delete selected</button>
                 <button type="button" className={buttonClass} onClick={() => void loadWorkflows()}>Refresh</button>
               </div>
-              <label className="md:col-span-2 xl:col-span-4">
-                <span className={labelClass}>Steps JSON</span>
-                <textarea className={textareaClass} rows={10} value={workflowStepsJson} onChange={(e) => setWorkflowStepsJson(e.target.value)} />
-              </label>
+              <div className="md:col-span-2 xl:col-span-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className={labelClass}>Workflow steps</span>
+                  <div className="inline-flex rounded-lg border border-slate-300 bg-white p-1">
+                    <button
+                      type="button"
+                      onClick={() => onWorkflowEditorModeChange("quick")}
+                      className={
+                        workflowEditorMode === "quick"
+                          ? "rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white"
+                          : "rounded-md px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                      }
+                    >
+                      Quick create
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onWorkflowEditorModeChange("json")}
+                      className={
+                        workflowEditorMode === "json"
+                          ? "rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white"
+                          : "rounded-md px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                      }
+                    >
+                      Raw JSON
+                    </button>
+                  </div>
+                </div>
+
+                {workflowEditorMode === "quick" ? (
+                  <div className="mt-3 space-y-3">
+                    <p className="text-xs text-slate-500">
+                      Quick create edits `id`, `role`, `prompt`, and `depends_on`; prompt maps to API field `title`.
+                    </p>
+                    {workflowQuickValidation.formErrors.length > 0 && (
+                      <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                        {workflowQuickValidation.formErrors.map((item) => (
+                          <p key={item}>{item}</p>
+                        ))}
+                      </div>
+                    )}
+                    {workflowStepDrafts.map((draft, index) => {
+                      const stepErrors = workflowQuickValidation.stepErrorsByClientId[draft.client_id] ?? {};
+                      const dependencyOptions = workflowStepDrafts
+                        .filter((candidate) => candidate.client_id !== draft.client_id)
+                        .map((candidate) => candidate.step_id.trim())
+                        .filter((candidate, candidateIndex, all) => candidate.length > 0 && all.indexOf(candidate) === candidateIndex);
+
+                      return (
+                        <div key={draft.client_id} className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-semibold text-slate-800">Step {index + 1}</p>
+                            <button
+                              type="button"
+                              className={buttonClass}
+                              onClick={() =>
+                                applyWorkflowStepDrafts(
+                                  workflowStepDrafts.filter((candidate) => candidate.client_id !== draft.client_id)
+                                )
+                              }
+                            >
+                              Remove
+                            </button>
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                            <label>
+                              <span className={labelClass}>Step id</span>
+                              <input
+                                className={inputClass}
+                                value={draft.step_id}
+                                onChange={(e) => onWorkflowStepDraftChange(draft.client_id, { step_id: e.target.value })}
+                                placeholder="plan"
+                              />
+                              {stepErrors.step_id && <p className="mt-1 text-xs text-rose-700">{stepErrors.step_id}</p>}
+                            </label>
+
+                            <label>
+                              <span className={labelClass}>Role</span>
+                              <select
+                                className={inputClass}
+                                value={draft.role_id === null ? "" : String(draft.role_id)}
+                                onChange={(e) => {
+                                  const nextRoleId = e.target.value === "" ? null : Number(e.target.value);
+                                  onWorkflowStepDraftChange(draft.client_id, { role_id: Number.isNaN(nextRoleId) ? null : nextRoleId });
+                                }}
+                              >
+                                <option value="">select role</option>
+                                {roles.map((role) => (
+                                  <option key={role.id} value={String(role.id)}>
+                                    {role.id}: {role.name}
+                                  </option>
+                                ))}
+                              </select>
+                              {stepErrors.role_id && <p className="mt-1 text-xs text-rose-700">{stepErrors.role_id}</p>}
+                            </label>
+
+                            <label className="md:col-span-2 xl:col-span-2">
+                              <span className={labelClass}>Prompt</span>
+                              <textarea
+                                className={textareaClass}
+                                rows={3}
+                                value={draft.prompt}
+                                onChange={(e) => onWorkflowStepDraftChange(draft.client_id, { prompt: e.target.value })}
+                                placeholder="Describe the work for this step."
+                              />
+                              {stepErrors.prompt && <p className="mt-1 text-xs text-rose-700">{stepErrors.prompt}</p>}
+                            </label>
+
+                            <fieldset className="md:col-span-2 xl:col-span-4">
+                              <legend className={labelClass}>Depends on</legend>
+                              {dependencyOptions.length === 0 ? (
+                                <p className="mt-2 text-xs text-slate-500">No other step IDs available yet.</p>
+                              ) : (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {dependencyOptions.map((dependency) => (
+                                    <label
+                                      key={dependency}
+                                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={draft.depends_on.includes(dependency)}
+                                        onChange={(e) => onWorkflowDependencyToggle(draft.client_id, dependency, e.target.checked)}
+                                      />
+                                      <span>{dependency}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              )}
+                              {stepErrors.depends_on && <p className="mt-1 text-xs text-rose-700">{stepErrors.depends_on}</p>}
+                            </fieldset>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    <button
+                      type="button"
+                      className={buttonClass}
+                      onClick={() =>
+                        applyWorkflowStepDrafts([
+                          ...workflowStepDrafts,
+                          createWorkflowStepDraft(defaultWorkflowRoleId, workflowStepDrafts.length)
+                        ])
+                      }
+                    >
+                      Add step
+                    </button>
+                  </div>
+                ) : (
+                  <label className="mt-3 block">
+                    <span className={labelClass}>Steps JSON</span>
+                    <textarea
+                      className={textareaClass}
+                      rows={10}
+                      value={workflowStepsJson}
+                      onChange={(e) => onWorkflowStepsJsonChange(e.target.value)}
+                    />
+                    {workflowStepsJsonParse.error && (
+                      <p className="mt-1 text-xs text-rose-700">{workflowStepsJsonParse.error}</p>
+                    )}
+                  </label>
+                )}
+              </div>
             </form>
 
             <div className="mt-4 overflow-x-auto">

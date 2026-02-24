@@ -27,6 +27,9 @@ The platform coordinates many autonomous agents for coding and non-coding tasks.
 
 3. Workflow builder from UI
 - DAG-based steps with dependencies.
+- Workflow step authoring modes:
+  - guided quick-create cards (`id`, `role`, `prompt`, `depends_on` picker with inline validation)
+  - advanced raw JSON editor for power users
 - Step config:
   - role
   - task type (`code`, `text`, `research`, `ops`, `custom`)

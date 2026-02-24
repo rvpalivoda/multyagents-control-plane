@@ -17,6 +17,11 @@ export type WorkflowStep = {
   role_id: number;
   title: string;
   depends_on: string[];
+  required_artifacts?: Array<{
+    from_step_id?: string | null;
+    artifact_type?: string | null;
+    label?: string | null;
+  }>;
 };
 
 export type WorkflowTemplateRead = {
