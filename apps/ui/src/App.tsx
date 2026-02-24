@@ -9,67 +9,22 @@ import type {
   TaskRead,
   WorkflowRunRead
 } from "../../../packages/contracts/ts/context7";
-
-type DispatchResult = {
-  resolved_context7_enabled: boolean;
-};
-
-type WorkflowRunDispatchReadyResponse = {
-  run_id: number;
-  dispatched: boolean;
-  task_id: number | null;
-  reason: string | null;
-  dispatch: DispatchResult | null;
-};
-
-type WorkflowStep = {
-  step_id: string;
-  role_id: number;
-  title: string;
-  depends_on: string[];
-};
-
-type WorkflowTemplateRead = {
-  id: number;
-  name: string;
-  project_id: number | null;
-  steps: WorkflowStep[];
-};
-
-type ProjectRead = {
-  id: number;
-  name: string;
-  root_path: string;
-  allowed_paths: string[];
-};
-
-type SkillPackRead = {
-  id: number;
-  name: string;
-  skills: string[];
-  used_by_role_ids: number[];
-};
-
-type ApprovalRead = {
-  id: number;
-  task_id: number;
-  status: ApprovalStatus;
-  decided_by: string | null;
-  comment: string | null;
-};
-
-type UiTab = "overview" | "projects" | "roles" | "skills" | "workflows" | "runs" | "tasks" | "approvals";
-
-const UI_TABS: Array<{ id: UiTab; label: string }> = [
-  { id: "overview", label: "Overview" },
-  { id: "projects", label: "Projects" },
-  { id: "roles", label: "Roles" },
-  { id: "skills", label: "Skill Packs" },
-  { id: "workflows", label: "Workflows" },
-  { id: "runs", label: "Runs" },
-  { id: "tasks", label: "Tasks" },
-  { id: "approvals", label: "Approvals" }
-];
+import { AdminSidebar } from "./components/AdminSidebar";
+import { AdminTopBar } from "./components/AdminTopBar";
+import { ApprovalsSection } from "./components/ApprovalsSection";
+import { OverviewSection } from "./components/OverviewSection";
+import { RunsCenterSection } from "./components/RunsCenterSection";
+import type {
+  ApprovalRead,
+  DispatchResult,
+  ProjectRead,
+  SkillPackRead,
+  UiTab,
+  WorkflowRunDispatchReadyResponse,
+  WorkflowStep,
+  WorkflowTemplateRead
+} from "./types/controlPanel";
+import { UI_TABS } from "./types/controlPanel";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8000";
 
@@ -1062,94 +1017,28 @@ export function App() {
   return (
     <main className="min-h-screen w-full bg-slate-50 text-slate-900">
       <div className="flex min-h-screen w-full">
-        <aside className="hidden w-64 shrink-0 border-r border-slate-200 bg-white px-4 py-6 lg:flex lg:flex-col">
-          <h1 className="text-xl font-semibold tracking-tight">Control Plane</h1>
-          <p className="mt-1 text-xs text-slate-500">Operations Console</p>
-          <nav className="mt-6 flex flex-col gap-2">
-            {UI_TABS.map((tab) => {
-              const active = tab.id === activeTab;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  className={
-                    active
-                      ? "w-full rounded-lg border border-blue-500 bg-blue-600 px-3 py-2 text-left text-sm font-medium text-white"
-                      : "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50"
-                  }
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </nav>
-          <div className="mt-6 space-y-2">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-              <span className="text-slate-500">Pending approvals</span>
-              <div className="text-lg font-semibold">{pendingApprovalsCount}</div>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-              <span className="text-slate-500">Failed runs</span>
-              <div className="text-lg font-semibold">{failedRuns.length}</div>
-            </div>
-          </div>
-        </aside>
+        <AdminSidebar
+          activeTab={activeTab}
+          pendingApprovalsCount={pendingApprovalsCount}
+          failedRunsCount={failedRuns.length}
+          onChangeTab={setActiveTab}
+        />
 
         <div className="flex min-h-screen flex-1 flex-col">
-          <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
-            <div className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
-              <div className="min-w-[220px] flex-1">
-                <h1 className="text-2xl font-semibold tracking-tight">Multiagents Control Panel</h1>
-                <p className="mt-1 text-xs text-slate-500">API: {API_BASE}</p>
-              </div>
-              <label className="min-w-[200px]">
-                <span className={labelClass}>Project context</span>
-                <select
-                  className={inputClass}
-                  value={contextProjectId ?? ""}
-                  onChange={(event) => {
-                    if (event.target.value === "") {
-                      setContextProjectId(null);
-                      return;
-                    }
-                    const parsed = Number(event.target.value);
-                    setContextProjectId(Number.isNaN(parsed) ? null : parsed);
-                  }}
-                >
-                  <option value="">all projects</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={String(project.id)}>
-                      {project.id}: {project.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="min-w-[220px] flex-1">
-                <span className={labelClass}>Global search</span>
-                <input
-                  className={inputClass}
-                  value={globalSearchInput}
-                  onChange={(event) => setGlobalSearchInput(event.target.value)}
-                  placeholder="runs/tasks/workflows"
-                />
-              </label>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" className={buttonClass} onClick={() => setActiveTab("runs")}>
-                  New run
-                </button>
-                <button type="button" className={buttonClass} onClick={() => setActiveTab("tasks")}>
-                  New task
-                </button>
-                <button type="button" className={buttonClass} onClick={() => setActiveTab("approvals")}>
-                  Approvals
-                </button>
-                <button type="button" className={primaryButtonClass} onClick={() => void onRefreshAll()}>
-                  Refresh all
-                </button>
-              </div>
-            </div>
-          </header>
+          <AdminTopBar
+            apiBase={API_BASE}
+            projects={projects}
+            contextProjectId={contextProjectId}
+            globalSearchInput={globalSearchInput}
+            labelClass={labelClass}
+            inputClass={inputClass}
+            buttonClass={buttonClass}
+            primaryButtonClass={primaryButtonClass}
+            onSetContextProjectId={setContextProjectId}
+            onSetGlobalSearchInput={setGlobalSearchInput}
+            onChangeTab={setActiveTab}
+            onRefreshAll={() => void onRefreshAll()}
+          />
 
           <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
             <section className="mb-4 grid w-full grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
@@ -1206,62 +1095,27 @@ export function App() {
             )}
 
         {activeTab === "overview" && (
-          <section className={sectionClass}>
-            <h2 className="text-lg font-semibold">Overview</h2>
-            <p className="mt-1 text-sm text-slate-500">Operational snapshot and actions that need attention now.</p>
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <p className={labelClass}>Selected run</p>
-                <p className="mt-2 text-sm">{selectedRun ? `${selectedRun.id} (${selectedRun.status})` : "none"}</p>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <p className={labelClass}>Selected task</p>
-                <p className="mt-2 text-sm">{task ? `${task.id} (${task.status})` : "none"}</p>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <p className={labelClass}>Selected approval</p>
-                <p className="mt-2 text-sm">{selectedApproval ? `${selectedApproval.id} (${selectedApproval.status})` : "none"}</p>
-              </div>
-            </div>
-            <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                <p className={labelClass}>Needs attention</p>
-                <ul className="mt-2 space-y-1 text-sm text-slate-700">
-                  <li>Pending approvals: {pendingApprovals.length}</li>
-                  <li>Failed runs: {failedRuns.length}</li>
-                  <li>Failed tasks: {failedTasks.length}</li>
-                </ul>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button type="button" className={buttonClass} onClick={() => setActiveTab("approvals")}>
-                    Open approvals
-                  </button>
-                  <button type="button" className={buttonClass} onClick={() => setActiveTab("runs")}>
-                    Open runs
-                  </button>
-                </div>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <p className={labelClass}>Recent pending approvals</p>
-                <div className="mt-2 space-y-1 text-sm text-slate-700">
-                  {pendingApprovals.slice(0, 5).map((approval) => (
-                    <button
-                      key={approval.id}
-                      type="button"
-                      className="block w-full rounded-md px-2 py-1 text-left hover:bg-white"
-                      onClick={() => {
-                        setSelectedApprovalId(approval.id);
-                        setTaskApproval(approval);
-                        setActiveTab("approvals");
-                      }}
-                    >
-                      #{approval.id} - task {approval.task_id}
-                    </button>
-                  ))}
-                  {pendingApprovals.length === 0 && <p className="text-slate-500">No pending approvals.</p>}
-                </div>
-              </div>
-            </div>
-          </section>
+          <OverviewSection
+            sectionClass={sectionClass}
+            labelClass={labelClass}
+            selectedRunLabel={selectedRun ? `${selectedRun.id} (${selectedRun.status})` : "none"}
+            selectedTaskLabel={task ? `${task.id} (${task.status})` : "none"}
+            selectedApprovalLabel={selectedApproval ? `${selectedApproval.id} (${selectedApproval.status})` : "none"}
+            pendingApprovalsCount={pendingApprovals.length}
+            failedRunsCount={failedRuns.length}
+            failedTasksCount={failedTasks.length}
+            pendingApprovalsPreview={pendingApprovals}
+            onOpenApprovals={() => setActiveTab("approvals")}
+            onOpenRuns={() => setActiveTab("runs")}
+            onOpenApprovalById={(approvalId) => {
+              const approval = approvals.find((item) => item.id === approvalId);
+              if (approval) {
+                setSelectedApprovalId(approval.id);
+                setTaskApproval(approval);
+              }
+              setActiveTab("approvals");
+            }}
+          />
         )}
 
         {activeTab === "projects" && (
@@ -1489,130 +1343,44 @@ export function App() {
         )}
 
         {activeTab === "runs" && (
-          <section className={sectionClass}>
-            <h2 className="text-lg font-semibold">Runs Center</h2>
-            <p className="mt-1 text-sm text-slate-500">Create, filter, and operate runs from one screen.</p>
-            <form className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4" onSubmit={onCreateWorkflowRun}>
-              <label>
-                <span className={labelClass}>Workflow template ID</span>
-                <input className={inputClass} value={runWorkflowTemplateIdInput} onChange={(e) => setRunWorkflowTemplateIdInput(e.target.value)} placeholder="optional" />
-              </label>
-              <label>
-                <span className={labelClass}>Task IDs (comma/newline)</span>
-                <input className={inputClass} value={runTaskIdsInput} onChange={(e) => setRunTaskIdsInput(e.target.value)} placeholder="1,2" />
-              </label>
-              <label>
-                <span className={labelClass}>Initiated by</span>
-                <input className={inputClass} value={runInitiatedBy} onChange={(e) => setRunInitiatedBy(e.target.value)} />
-              </label>
-              <label>
-                <span className={labelClass}>Search runs</span>
-                <input className={inputClass} value={runSearchInput} onChange={(e) => setRunSearchInput(e.target.value)} placeholder="id/status/template" />
-              </label>
-              <div className="md:col-span-2 xl:col-span-4 flex flex-wrap gap-2">
-                <button type="submit" className={primaryButtonClass}>Create run</button>
-                <button type="button" className={buttonClass} onClick={() => void loadWorkflowRuns()}>Refresh runs</button>
-                <button type="button" className={buttonClass} onClick={() => void onRefreshTimeline()}>Refresh timeline</button>
-                <button type="button" className={buttonClass} onClick={() => void onRunAction("pause")} disabled={selectedRunId === null}>Pause run</button>
-                <button type="button" className={buttonClass} onClick={() => void onRunAction("resume")} disabled={selectedRunId === null}>Resume run</button>
-                <button type="button" className={buttonClass} onClick={() => void onRunAction("abort")} disabled={selectedRunId === null}>Abort run</button>
-                <button type="button" className={buttonClass} onClick={onDispatchReadyTask} disabled={selectedRunId === null}>Dispatch ready task</button>
-              </div>
-            </form>
-
-            <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-12">
-              <div className="xl:col-span-5">
-                <div className="max-h-[560px] overflow-auto rounded-lg border border-slate-200 bg-white">
-                  <table className={tableClass}>
-                    <thead>
-                      <tr>
-                        <th className={thClass}>id</th>
-                        <th className={thClass}>status</th>
-                        <th className={thClass}>template</th>
-                        <th className={thClass}>project</th>
-                        <th className={thClass}>updated</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredRuns.map((run) => {
-                        const projectId =
-                          run.workflow_template_id === null
-                            ? null
-                            : (workflowProjectIdById[run.workflow_template_id] ?? null);
-                        return (
-                          <tr
-                            key={run.id}
-                            onClick={() => {
-                              setSelectedRunId(run.id);
-                              setTaskFilterRunIdInput(String(run.id));
-                              void loadTasks(run.id);
-                              void loadTimelineEvents(run.id, null);
-                            }}
-                            className={`cursor-pointer ${run.id === selectedRunId ? "bg-blue-50" : "hover:bg-slate-50"}`}
-                          >
-                            <td className={tdClass}>{run.id}</td>
-                            <td className={tdClass}>{run.status}</td>
-                            <td className={tdClass}>
-                              {run.workflow_template_id === null
-                                ? "-"
-                                : `${run.workflow_template_id} ${workflowNameById[run.workflow_template_id] ?? ""}`}
-                            </td>
-                            <td className={tdClass}>
-                              {projectId === null ? "-" : `${projectId} ${projectNameById[projectId] ?? ""}`}
-                            </td>
-                            <td className={tdClass}>{run.updated_at}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="xl:col-span-7 space-y-3">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <p className={labelClass}>Selected run summary</p>
-                  {selectedRun ? (
-                    <div className="mt-2 text-sm text-slate-700">
-                      <p>
-                        Run #{selectedRun.id} ({selectedRun.status})
-                      </p>
-                      <p>Template: {selectedRun.workflow_template_id ?? "-"}</p>
-                      <p>Tasks: {selectedRun.task_ids.join(", ") || "-"}</p>
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-sm text-slate-500">Select a run from the left table.</p>
-                  )}
-                </div>
-
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <p className={labelClass}>Tasks in selected run</p>
-                  <div className="mt-2 max-h-40 overflow-auto">
-                    {selectedRunTasks.length === 0 ? (
-                      <p className="text-sm text-slate-500">No task details loaded yet.</p>
-                    ) : (
-                      <ul className="space-y-1 text-sm text-slate-700">
-                        {selectedRunTasks.map((runTask) => (
-                          <li key={runTask.id}>
-                            #{runTask.id} - {runTask.status} - {runTask.title}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </div>
-
-                {runDispatchResult && (
-                  <pre className="max-h-44 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-                    {JSON.stringify(runDispatchResult, null, 2)}
-                  </pre>
-                )}
-                <pre className="max-h-64 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-                  {JSON.stringify(timelineEvents, null, 2)}
-                </pre>
-              </div>
-            </div>
-          </section>
+          <RunsCenterSection
+            sectionClass={sectionClass}
+            labelClass={labelClass}
+            inputClass={inputClass}
+            buttonClass={buttonClass}
+            primaryButtonClass={primaryButtonClass}
+            tableClass={tableClass}
+            thClass={thClass}
+            tdClass={tdClass}
+            runWorkflowTemplateIdInput={runWorkflowTemplateIdInput}
+            runTaskIdsInput={runTaskIdsInput}
+            runInitiatedBy={runInitiatedBy}
+            runSearchInput={runSearchInput}
+            selectedRunId={selectedRunId}
+            filteredRuns={filteredRuns}
+            workflowNameById={workflowNameById}
+            workflowProjectIdById={workflowProjectIdById}
+            projectNameById={projectNameById}
+            selectedRun={selectedRun}
+            selectedRunTasks={selectedRunTasks}
+            runDispatchResult={runDispatchResult}
+            timelineEvents={timelineEvents}
+            onRunWorkflowTemplateIdChange={setRunWorkflowTemplateIdInput}
+            onRunTaskIdsChange={setRunTaskIdsInput}
+            onRunInitiatedByChange={setRunInitiatedBy}
+            onRunSearchChange={setRunSearchInput}
+            onCreateWorkflowRun={onCreateWorkflowRun}
+            onRefreshRuns={() => void loadWorkflowRuns()}
+            onRefreshTimeline={() => void onRefreshTimeline()}
+            onRunAction={(action) => void onRunAction(action)}
+            onDispatchReadyTask={onDispatchReadyTask}
+            onSelectRun={(runId) => {
+              setSelectedRunId(runId);
+              setTaskFilterRunIdInput(String(runId));
+              void loadTasks(runId);
+              void loadTimelineEvents(runId, null);
+            }}
+          />
         )}
 
         {activeTab === "tasks" && (
@@ -1801,89 +1569,33 @@ export function App() {
         )}
 
         {activeTab === "approvals" && (
-          <section className={sectionClass}>
-            <h2 className="text-lg font-semibold">Approvals Inbox</h2>
-            <p className="mt-1 text-sm text-slate-500">Pending approvals are sorted first for faster operator decisions.</p>
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <div className="flex flex-wrap items-end gap-2">
-                <button type="button" className={buttonClass} onClick={() => void refreshApprovals()}>
-                  Refresh approvals
-                </button>
-              </div>
-              <label>
-                <span className={labelClass}>Approval ID</span>
-                <input className={inputClass} value={approvalLookupIdInput} onChange={(e) => setApprovalLookupIdInput(e.target.value)} />
-              </label>
-              <div className="flex items-end">
-                <button type="button" className={buttonClass} onClick={() => void onLookupApprovalById()}>
-                  Load by ID
-                </button>
-              </div>
-              <div />
-              <label>
-                <span className={labelClass}>Actor</span>
-                <input className={inputClass} value={approvalActor} onChange={(e) => setApprovalActor(e.target.value)} />
-              </label>
-              <label className="md:col-span-2">
-                <span className={labelClass}>Comment</span>
-                <input className={inputClass} value={approvalComment} onChange={(e) => setApprovalComment(e.target.value)} />
-              </label>
-              <div className="flex flex-wrap items-end gap-2">
-                <button
-                  type="button"
-                  className={primaryButtonClass}
-                  onClick={() => void onApprovalDecision("approve")}
-                  disabled={selectedApproval?.status !== "pending"}
-                >
-                  Approve
-                </button>
-                <button
-                  type="button"
-                  className={buttonClass}
-                  onClick={() => void onApprovalDecision("reject")}
-                  disabled={selectedApproval?.status !== "pending"}
-                >
-                  Reject
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-              Pending: {pendingApprovals.length} | Total in view: {filteredApprovals.length}
-            </div>
-
-            <div className="mt-4 overflow-x-auto">
-              <table className={tableClass}>
-                <thead>
-                  <tr>
-                    <th className={thClass}>id</th>
-                    <th className={thClass}>task</th>
-                    <th className={thClass}>status</th>
-                    <th className={thClass}>decided by</th>
-                    <th className={thClass}>comment</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredApprovals.map((approval) => (
-                    <tr
-                      key={approval.id}
-                      onClick={() => {
-                        setSelectedApprovalId(approval.id);
-                        setTaskApproval(approval);
-                      }}
-                      className={`cursor-pointer ${selectedApproval?.id === approval.id ? "bg-blue-50" : "hover:bg-slate-50"}`}
-                    >
-                      <td className={tdClass}>{approval.id}</td>
-                      <td className={tdClass}>{approval.task_id}</td>
-                      <td className={tdClass}>{approval.status}</td>
-                      <td className={tdClass}>{approval.decided_by ?? "-"}</td>
-                      <td className={tdClass}>{approval.comment ?? "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          <ApprovalsSection
+            sectionClass={sectionClass}
+            labelClass={labelClass}
+            inputClass={inputClass}
+            buttonClass={buttonClass}
+            primaryButtonClass={primaryButtonClass}
+            tableClass={tableClass}
+            thClass={thClass}
+            tdClass={tdClass}
+            approvalLookupIdInput={approvalLookupIdInput}
+            approvalActor={approvalActor}
+            approvalComment={approvalComment}
+            pendingApprovalsCount={pendingApprovals.length}
+            filteredApprovalsCount={filteredApprovals.length}
+            filteredApprovals={filteredApprovals}
+            selectedApproval={selectedApproval}
+            onApprovalLookupIdChange={setApprovalLookupIdInput}
+            onApprovalActorChange={setApprovalActor}
+            onApprovalCommentChange={setApprovalComment}
+            onRefreshApprovals={() => void refreshApprovals()}
+            onLookupApprovalById={() => void onLookupApprovalById()}
+            onApprovalDecision={(action) => void onApprovalDecision(action)}
+            onSelectApproval={(approval) => {
+              setSelectedApprovalId(approval.id);
+              setTaskApproval(approval);
+            }}
+          />
         )}
           </div>
         </div>
