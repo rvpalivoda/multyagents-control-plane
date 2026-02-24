@@ -63,6 +63,7 @@ Implemented reproducible E2E smoke pipeline for local stack:
 - Added runner script:
   - `infra/compose/scripts/run-e2e.sh`
   - starts host-runner in mock mode on host
+  - auto-selects free host-runner port when default `48070` is busy
   - starts docker compose stack
   - runs E2E scenario
   - always performs cleanup (`docker compose down`, runner stop)
@@ -106,7 +107,7 @@ Latest re-run evidence (2026-02-24):
   - `[e2e] run success: 1`
   - `[e2e] smoke passed`
 - Note:
-  - isolated runner port avoids collision with already-running local host-runner on default `48070`.
+  - run script now handles this collision automatically by selecting a free port.
 
 Commits:
 - `28be9f3` (`feat(task-016): bootstrap monorepo baseline`)
