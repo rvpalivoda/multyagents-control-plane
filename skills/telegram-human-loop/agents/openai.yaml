@@ -1,0 +1,4 @@
+interface:
+  display_name: "Telegram Human Loop"
+  short_description: "Help with Telegram Human Loop tasks"
+  default_prompt: "Use $telegram-human-loop to implement Telegram command and approval flows for operator control."

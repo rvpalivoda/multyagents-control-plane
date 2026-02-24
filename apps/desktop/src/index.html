@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>multyagents desktop</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="controls">
+        <h1>multyagents</h1>
+        <p class="muted">Desktop launcher for local multi-agent stack</p>
+
+        <div class="button-grid">
+          <button data-command="up">up</button>
+          <button data-command="down">down</button>
+          <button data-command="status">status</button>
+          <button data-command="logs">logs</button>
+          <button data-command="e2e">e2e</button>
+        </div>
+
+        <div class="row">
+          <button id="stopBtn" class="secondary">stop active</button>
+          <button id="clearBtn" class="secondary">clear output</button>
+        </div>
+      </aside>
+
+      <main class="terminal-pane">
+        <div class="status-bar">
+          <span id="statusLabel">idle</span>
+          <span id="rootDirLabel" class="muted"></span>
+        </div>
+        <pre id="output"></pre>
+      </main>
+    </div>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

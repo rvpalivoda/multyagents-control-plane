@@ -1,0 +1,4 @@
+interface:
+  display_name: "Testing Observability"
+  short_description: "Help with Testing Observability tasks"
+  default_prompt: "Use $testing-observability to add tests, telemetry, and failure diagnostics for the platform."

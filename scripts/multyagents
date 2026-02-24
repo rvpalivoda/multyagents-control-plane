@@ -1,0 +1,318 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+COMPOSE_DIR="$ROOT_DIR/infra/compose"
+COMPOSE_ENV_FILE="$COMPOSE_DIR/.env"
+RUNNER_DIR="$ROOT_DIR/apps/host-runner"
+RUNTIME_DIR="$ROOT_DIR/.multyagents-runtime"
+RUNNER_PID_FILE="$RUNTIME_DIR/host-runner.pid"
+RUNNER_LOG_FILE="$RUNTIME_DIR/host-runner.log"
+
+mkdir -p "$RUNTIME_DIR"
+
+command_exists() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+require_command() {
+  local cmd="$1"
+  if ! command_exists "$cmd"; then
+    echo "missing required command: $cmd" >&2
+    exit 1
+  fi
+}
+
+load_compose_env() {
+  if [[ -f "$COMPOSE_ENV_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$COMPOSE_ENV_FILE"
+  fi
+}
+
+runner_port_from_url() {
+  local url="$1"
+  local no_proto="${url#*://}"
+  local host_port="${no_proto%%/*}"
+  echo "${host_port##*:}"
+}
+
+runner_port() {
+  load_compose_env
+  local runner_url="${API_HOST_RUNNER_URL:-http://host.docker.internal:48070}"
+  runner_port_from_url "$runner_url"
+}
+
+api_port() {
+  load_compose_env
+  echo "${API_PORT:-48000}"
+}
+
+ui_port() {
+  load_compose_env
+  echo "${UI_PORT:-45173}"
+}
+
+telegram_port() {
+  load_compose_env
+  echo "${TELEGRAM_BOT_PORT:-48010}"
+}
+
+wait_http_ok() {
+  local url="$1"
+  local timeout="${2:-60}"
+  local deadline=$((SECONDS + timeout))
+  while (( SECONDS < deadline )); do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "timeout waiting for $url" >&2
+  return 1
+}
+
+runner_pid() {
+  if [[ -f "$RUNNER_PID_FILE" ]]; then
+    cat "$RUNNER_PID_FILE"
+  fi
+}
+
+runner_is_running() {
+  local pid
+  pid="$(runner_pid || true)"
+  if [[ -z "${pid:-}" ]]; then
+    return 1
+  fi
+  kill -0 "$pid" >/dev/null 2>&1
+}
+
+ensure_runner_venv() {
+  if [[ ! -x "$RUNNER_DIR/.venv/bin/python" ]]; then
+    python3 -m venv "$RUNNER_DIR/.venv"
+    "$RUNNER_DIR/.venv/bin/pip" install -e "$RUNNER_DIR"
+  fi
+}
+
+start_runner() {
+  if runner_is_running; then
+    echo "host-runner already running (pid=$(runner_pid))"
+    return 0
+  fi
+
+  ensure_runner_venv
+
+  local mode="${HOST_RUNNER_EXECUTOR:-codex}"
+  if [[ "$mode" == "codex" ]]; then
+    local codex_bin="${HOST_RUNNER_CODEX_BIN:-codex}"
+    if ! command_exists "$codex_bin"; then
+      echo "HOST_RUNNER_EXECUTOR=codex but binary not found: $codex_bin" >&2
+      echo "set HOST_RUNNER_EXECUTOR=mock for local smoke mode" >&2
+      exit 1
+    fi
+  fi
+
+  local port
+  port="$(runner_port)"
+  echo "starting host-runner on 0.0.0.0:${port} (mode=${mode})"
+  (
+    cd "$RUNNER_DIR"
+    export HOST_RUNNER_EXECUTOR="${mode}"
+    export HOST_RUNNER_CODEX_BIN="${HOST_RUNNER_CODEX_BIN:-codex}"
+    export HOST_RUNNER_CODEX_ARGS="${HOST_RUNNER_CODEX_ARGS:-}"
+    export HOST_RUNNER_CLEANUP_WORKTREE="${HOST_RUNNER_CLEANUP_WORKTREE:-true}"
+    nohup "$RUNNER_DIR/.venv/bin/uvicorn" \
+      multyagents_host_runner.main:app \
+      --host 0.0.0.0 \
+      --port "$port" \
+      >>"$RUNNER_LOG_FILE" 2>&1 < /dev/null &
+    echo "$!" >"$RUNNER_PID_FILE"
+  )
+
+  if ! wait_http_ok "http://127.0.0.1:${port}/health" 45; then
+    echo "host-runner failed to start, check log: $RUNNER_LOG_FILE" >&2
+    stop_runner || true
+    exit 1
+  fi
+}
+
+stop_runner() {
+  local pid
+  pid="$(runner_pid || true)"
+  if [[ -z "${pid:-}" ]]; then
+    return 0
+  fi
+  if kill -0 "$pid" >/dev/null 2>&1; then
+    echo "stopping host-runner (pid=$pid)"
+    kill "$pid" >/dev/null 2>&1 || true
+    wait "$pid" 2>/dev/null || true
+  fi
+  rm -f "$RUNNER_PID_FILE"
+}
+
+compose_up() {
+  echo "starting docker compose stack"
+  (cd "$COMPOSE_DIR" && docker compose up --build -d)
+}
+
+compose_down() {
+  echo "stopping docker compose stack"
+  (cd "$COMPOSE_DIR" && docker compose down --remove-orphans)
+}
+
+cmd_up() {
+  require_command docker
+  require_command python3
+  require_command curl
+  start_runner
+  compose_up
+
+  local a_port u_port t_port
+  a_port="$(api_port)"
+  u_port="$(ui_port)"
+  t_port="$(telegram_port)"
+
+  wait_http_ok "http://localhost:${a_port}/health" 90
+  wait_http_ok "http://localhost:${t_port}/health" 90
+
+  echo
+  echo "stack is up:"
+  echo "  api:       http://localhost:${a_port}"
+  echo "  ui:        http://localhost:${u_port}"
+  echo "  telegram:  http://localhost:${t_port}"
+  echo "  runner:    http://localhost:$(runner_port)"
+  echo
+  echo "use './scripts/multyagents status' for health and process state"
+}
+
+cmd_down() {
+  require_command docker
+  compose_down
+  stop_runner
+  echo "stack is down"
+}
+
+cmd_status() {
+  require_command docker
+  local r_port a_port u_port t_port
+  r_port="$(runner_port)"
+  a_port="$(api_port)"
+  u_port="$(ui_port)"
+  t_port="$(telegram_port)"
+
+  if runner_is_running; then
+    echo "host-runner: running (pid=$(runner_pid))"
+  else
+    echo "host-runner: stopped"
+  fi
+  echo "host-runner log: $RUNNER_LOG_FILE"
+  echo
+  (cd "$COMPOSE_DIR" && docker compose ps)
+  echo
+  if curl -fsS "http://127.0.0.1:${r_port}/health" >/dev/null 2>&1; then
+    echo "runner health: ok (http://127.0.0.1:${r_port}/health)"
+  else
+    echo "runner health: down (http://127.0.0.1:${r_port}/health)"
+  fi
+  if curl -fsS "http://localhost:${a_port}/health" >/dev/null 2>&1; then
+    echo "api health: ok (http://localhost:${a_port}/health)"
+  else
+    echo "api health: down (http://localhost:${a_port}/health)"
+  fi
+  if curl -fsS "http://localhost:${t_port}/health" >/dev/null 2>&1; then
+    echo "telegram health: ok (http://localhost:${t_port}/health)"
+  else
+    echo "telegram health: down (http://localhost:${t_port}/health)"
+  fi
+  echo "ui url: http://localhost:${u_port}"
+}
+
+cmd_logs() {
+  require_command docker
+  echo "==== host-runner log (tail 120) ===="
+  if [[ -f "$RUNNER_LOG_FILE" ]]; then
+    tail -n 120 "$RUNNER_LOG_FILE"
+  else
+    echo "no host-runner log yet"
+  fi
+  echo
+  echo "==== docker compose logs (tail 120) ===="
+  (cd "$COMPOSE_DIR" && docker compose logs --tail=120)
+}
+
+cmd_e2e() {
+  require_command docker
+  require_command python3
+  require_command curl
+  (cd "$COMPOSE_DIR" && ./scripts/run-e2e.sh)
+}
+
+cmd_desktop() {
+  require_command node
+  require_command npm
+  local desktop_dir="$ROOT_DIR/apps/desktop"
+  local npm_script="start"
+  if [[ ! -f "$desktop_dir/package.json" ]]; then
+    echo "desktop app not found: $desktop_dir/package.json" >&2
+    exit 1
+  fi
+  if [[ ! -x "$desktop_dir/node_modules/.bin/electron" ]]; then
+    echo "installing desktop dependencies"
+    (cd "$desktop_dir" && npm install --no-audit --no-fund)
+  fi
+  if [[ "$(uname -s)" == "Linux" ]]; then
+    local sandbox_bin="$desktop_dir/node_modules/electron/dist/chrome-sandbox"
+    local sandbox_uid=""
+    local sandbox_mode=""
+    if [[ -f "$sandbox_bin" ]]; then
+      sandbox_uid="$(stat -c '%u' "$sandbox_bin" 2>/dev/null || true)"
+      sandbox_mode="$(stat -c '%a' "$sandbox_bin" 2>/dev/null || true)"
+    fi
+    if [[ "${sandbox_uid:-}" != "0" || "${sandbox_mode:-}" != "4755" ]]; then
+      npm_script="start:no-sandbox"
+      echo "warning: running Electron with --no-sandbox (chrome-sandbox is not root:4755)" >&2
+      echo "to enable sandbox: sudo chown root:root \"$sandbox_bin\" && sudo chmod 4755 \"$sandbox_bin\"" >&2
+    fi
+  fi
+  (cd "$desktop_dir" && npm run "$npm_script")
+}
+
+cmd_help() {
+  cat <<'EOF'
+Usage: ./scripts/multyagents <command>
+
+Commands:
+  up       Start host-runner + docker stack and wait for health
+  down     Stop docker stack and host-runner
+  status   Show process/container status and health checks
+  logs     Show recent host-runner and docker logs
+  e2e      Run end-to-end smoke scenario
+  desktop  Launch Electron desktop control panel
+  help     Show this help
+
+Environment overrides:
+  HOST_RUNNER_EXECUTOR   default: codex (use mock for local no-codex mode)
+  HOST_RUNNER_CODEX_BIN  default: codex
+  HOST_RUNNER_CODEX_ARGS default: empty
+EOF
+}
+
+main() {
+  local cmd="${1:-help}"
+  case "$cmd" in
+    up) cmd_up ;;
+    down) cmd_down ;;
+    status) cmd_status ;;
+    logs) cmd_logs ;;
+    e2e) cmd_e2e ;;
+    desktop) cmd_desktop ;;
+    help|-h|--help) cmd_help ;;
+    *)
+      echo "unknown command: $cmd" >&2
+      cmd_help
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

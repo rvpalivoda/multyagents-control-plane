@@ -1,0 +1,4 @@
+interface:
+  display_name: "Events Artifacts Contract"
+  short_description: "Help with Events Artifacts Contract tasks"
+  default_prompt: "Use $events-artifacts-contract to define or review event and artifact schema compatibility."

@@ -1,0 +1,57 @@
+# Task 036: Implement skill-pack management in API and UI
+
+## Metadata
+
+- Status: `todo`
+- Priority: `P1`
+- Owner: `codex`
+- Created: `2026-02-23`
+- Updated: `2026-02-23`
+
+## Objective
+
+Provide full operator flow to manage skill-packs and attach them to roles from control panel.
+
+## Non-goals
+
+- External marketplace of community skills.
+- Automatic skill quality ranking.
+
+## References
+
+- Product spec: `docs/PRODUCT_SPEC.md#3-core-capabilities`
+- Architecture: `docs/ARCHITECTURE.md#3-main-data-model`
+- Plan phase: `docs/IMPLEMENTATION_PLAN.md#phase-1-core-domain-3-4-days`
+
+## Scope
+
+- Add `skill_pack` model and CRUD API endpoints.
+- Validate included skills against local skills catalog.
+- Extend role forms/API to bind/unbind skill-packs.
+- Add UI page for skill-pack list/create/edit/delete and role assignment view.
+
+## Acceptance criteria
+
+- [ ] Operator can CRUD skill-packs from UI.
+- [ ] Role can reference one or more skill-packs with backend validation.
+- [ ] API returns clear errors for unknown/duplicate skills or pack names.
+- [ ] UI displays which roles use each skill-pack.
+
+## Implementation notes
+
+Read catalog from `docs/SKILLS_CATALOG.md` initially; move to dedicated registry API later if needed.
+
+## Test plan
+
+- [ ] API tests for skill-pack CRUD and role-assignment validation.
+- [ ] UI tests for create/edit/delete flows.
+- [ ] Integration test for workflow dispatch payload including resolved skill-packs.
+
+## Risks and mitigations
+
+- Risk: Catalog drift between documentation and runtime.
+- Mitigation: Add checksum/version field and validation warning on startup.
+
+## Result
+
+Planned.

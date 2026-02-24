@@ -1,0 +1,4 @@
+interface:
+  display_name: "Workflow Dag Engine"
+  short_description: "Help with Workflow Dag Engine tasks"
+  default_prompt: "Use $workflow-dag-engine to define task dependency rules and state transitions for a workflow run."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "React Control Panel"
+  short_description: "Help with React Control Panel tasks"
+  default_prompt: "Use $react-control-panel to build or refine control panel screens for roles, workflows, and runs."

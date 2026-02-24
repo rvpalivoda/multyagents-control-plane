@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Workspace Git"
+  short_description: "Help with Project Workspace Git tasks"
+  default_prompt: "Use $project-workspace-git to set up safe workspace and git execution mode for an agent task."

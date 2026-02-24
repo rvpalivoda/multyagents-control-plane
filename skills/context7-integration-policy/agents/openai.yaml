@@ -1,0 +1,4 @@
+interface:
+  display_name: "Context7 Integration Policy"
+  short_description: "Help with Context7 Integration Policy tasks"
+  default_prompt: "Use $context7-integration-policy to define role and task rules for Context7 usage and fallback behavior."

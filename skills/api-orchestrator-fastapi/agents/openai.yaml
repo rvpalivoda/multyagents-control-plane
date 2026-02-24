@@ -1,0 +1,4 @@
+interface:
+  display_name: "API Orchestrator FastAPI"
+  short_description: "Help with API Orchestrator FastAPI tasks"
+  default_prompt: "Use $api-orchestrator-fastapi to implement an orchestration API change with consistent schemas and tests."

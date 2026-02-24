@@ -1,0 +1,4 @@
+interface:
+  display_name: "Context7 Doc Research"
+  short_description: "Help with Context7 Doc Research tasks"
+  default_prompt: "Use $context7-doc-research to retrieve current dependency documentation before implementing external API usage."

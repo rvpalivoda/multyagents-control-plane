@@ -1,0 +1,15 @@
+{
+  "name": "multyagents-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron desktop wrapper for multyagents launcher",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:no-sandbox": "electron . --no-sandbox",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7"
+  }
+}

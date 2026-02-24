@@ -1,0 +1,4 @@
+interface:
+  display_name: "Task Governance"
+  short_description: "Help with Task Governance tasks"
+  default_prompt: "Use $task-governance to create or update a tracked task with explicit acceptance criteria."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Docker Local Stack"
+  short_description: "Help with Docker Local Stack tasks"
+  default_prompt: "Use $docker-local-stack to configure or validate the Docker compose stack for local development."

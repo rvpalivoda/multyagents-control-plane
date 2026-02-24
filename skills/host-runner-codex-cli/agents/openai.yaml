@@ -1,0 +1,4 @@
+interface:
+  display_name: "Host Runner Codex CLI"
+  short_description: "Help with Host Runner Codex CLI tasks"
+  default_prompt: "Use $host-runner-codex-cli to implement or debug Python runner execution of local Codex CLI tasks."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Architecture Guard"
+  short_description: "Help with Architecture Guard tasks"
+  default_prompt: "Use $architecture-guard to assess architecture impact and decide whether an ADR update is required."

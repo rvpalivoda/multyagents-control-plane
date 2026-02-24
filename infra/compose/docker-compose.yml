@@ -1,0 +1,90 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-multyagents}
+      POSTGRES_USER: ${POSTGRES_USER:-multyagents}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-multyagents}
+    ports:
+      - "${POSTGRES_PORT:-45432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-multyagents} -d ${POSTGRES_DB:-multyagents}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-46379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile
+    environment:
+      API_HOST_RUNNER_URL: ${API_HOST_RUNNER_URL:-http://host.docker.internal:48070}
+      API_RUNNER_CALLBACK_BASE_URL: ${API_RUNNER_CALLBACK_BASE_URL:-http://localhost:48000}
+      API_RUNNER_CALLBACK_TOKEN: ${API_RUNNER_CALLBACK_TOKEN:-}
+      API_CORS_ALLOW_ORIGINS: ${API_CORS_ALLOW_ORIGINS:-}
+      API_CORS_ALLOW_ORIGIN_REGEX: ${API_CORS_ALLOW_ORIGIN_REGEX:-}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://multyagents:multyagents@postgres:5432/multyagents}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      CONTEXT7_ENABLED_DEFAULT: ${CONTEXT7_ENABLED_DEFAULT:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${API_PORT:-48000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  ui:
+    build:
+      context: ../../apps/ui
+      dockerfile: Dockerfile
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:48000}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${UI_PORT:-45173}:5173"
+
+  telegram-bot:
+    build:
+      context: ../../apps/telegram-bot
+      dockerfile: Dockerfile
+    environment:
+      API_BASE_URL: ${API_BASE_URL:-http://api:8000}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${TELEGRAM_BOT_PORT:-48010}:8010"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/health').read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:

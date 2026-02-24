@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "multyagents/contracts/v1/context7.schema.json",
+  "title": "Context7 Contracts v1",
+  "type": "object",
+  "$defs": {
+    "Context7Mode": {
+      "type": "string",
+      "enum": ["inherit", "force_on", "force_off"]
+    },
+    "ExecutionMode": {
+      "type": "string",
+      "enum": ["no-workspace", "shared-workspace", "isolated-worktree", "docker-sandbox"]
+    },
+    "ApprovalStatus": {
+      "type": "string",
+      "enum": ["pending", "approved", "rejected"]
+    },
+    "WorkflowRunStatus": {
+      "type": "string",
+      "enum": ["created", "running", "paused", "aborted", "success", "failed"]
+    },
+    "TaskStatus": {
+      "type": "string",
+      "enum": ["created", "dispatched", "queued", "running", "cancel-requested", "success", "failed", "canceled", "submit-failed"]
+    },
+    "RoleRead": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "context7_enabled",
+        "system_prompt",
+        "allowed_tools",
+        "skill_packs",
+        "execution_constraints"
+      ],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "context7_enabled": { "type": "boolean" },
+        "system_prompt": { "type": "string" },
+        "allowed_tools": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "skill_packs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "execution_constraints": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "TaskRead": {
+      "type": "object",
+      "required": [
+        "id",
+        "role_id",
+        "title",
+        "context7_mode",
+        "execution_mode",
+        "status",
+        "requires_approval",
+        "project_id",
+        "lock_paths",
+        "runner_message",
+        "started_at",
+        "finished_at",
+        "exit_code"
+      ],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "role_id": { "type": "integer", "minimum": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "context7_mode": { "$ref": "#/$defs/Context7Mode" },
+        "execution_mode": { "$ref": "#/$defs/ExecutionMode" },
+        "status": { "$ref": "#/$defs/TaskStatus" },
+        "requires_approval": { "type": "boolean" },
+        "project_id": { "type": ["integer", "null"], "minimum": 1 },
+        "lock_paths": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "runner_message": { "type": ["string", "null"] },
+        "started_at": { "type": ["string", "null"] },
+        "finished_at": { "type": ["string", "null"] },
+        "exit_code": { "type": ["integer", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "TaskAudit": {
+      "type": "object",
+      "required": [
+        "task_id",
+        "role_id",
+        "context7_mode",
+        "role_context7_enabled",
+        "resolved_context7_enabled",
+        "execution_mode",
+        "requires_approval",
+        "approval_status",
+        "project_id",
+        "lock_paths"
+      ],
+      "properties": {
+        "task_id": { "type": "integer", "minimum": 1 },
+        "role_id": { "type": "integer", "minimum": 1 },
+        "context7_mode": { "$ref": "#/$defs/Context7Mode" },
+        "role_context7_enabled": { "type": "boolean" },
+        "resolved_context7_enabled": { "type": "boolean" },
+        "execution_mode": { "$ref": "#/$defs/ExecutionMode" },
+        "requires_approval": { "type": "boolean" },
+        "approval_status": {
+          "anyOf": [
+            { "$ref": "#/$defs/ApprovalStatus" },
+            { "type": "null" }
+          ]
+        },
+        "project_id": { "type": ["integer", "null"], "minimum": 1 },
+        "lock_paths": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "SharedWorkspaceContext": {
+      "type": "object",
+      "required": ["project_id", "project_root", "lock_paths"],
+      "properties": {
+        "project_id": { "type": "integer", "minimum": 1 },
+        "project_root": { "type": "string", "minLength": 1 },
+        "lock_paths": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "worktree_path": { "type": ["string", "null"] },
+        "git_branch": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "DispatchResponse": {
+      "type": "object",
+      "required": ["task_id", "resolved_context7_enabled", "runner_payload"],
+      "properties": {
+        "task_id": { "type": "integer", "minimum": 1 },
+        "resolved_context7_enabled": { "type": "boolean" },
+        "runner_payload": {
+          "type": "object",
+          "required": ["task_id", "role_id", "title", "execution_mode", "context", "workspace"],
+          "properties": {
+            "task_id": { "type": "integer", "minimum": 1 },
+            "role_id": { "type": "integer", "minimum": 1 },
+            "title": { "type": "string" },
+            "execution_mode": { "$ref": "#/$defs/ExecutionMode" },
+            "context": {
+              "type": "object",
+              "required": ["provider", "enabled"],
+              "properties": {
+                "provider": { "type": "string", "const": "context7" },
+                "enabled": { "type": "boolean" }
+              },
+              "additionalProperties": false
+            },
+            "workspace": {
+              "anyOf": [
+                { "$ref": "#/$defs/SharedWorkspaceContext" },
+                { "type": "null" }
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "WorkflowRunRead": {
+      "type": "object",
+      "required": [
+        "id",
+        "workflow_template_id",
+        "task_ids",
+        "status",
+        "initiated_by",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "workflow_template_id": { "type": ["integer", "null"], "minimum": 1 },
+        "task_ids": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "status": { "$ref": "#/$defs/WorkflowRunStatus" },
+        "initiated_by": { "type": ["string", "null"] },
+        "created_at": { "type": "string", "minLength": 1 },
+        "updated_at": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "WorkflowRunDispatchReadyResponse": {
+      "type": "object",
+      "required": ["run_id", "dispatched", "task_id", "reason", "dispatch"],
+      "properties": {
+        "run_id": { "type": "integer", "minimum": 1 },
+        "dispatched": { "type": "boolean" },
+        "task_id": { "type": ["integer", "null"], "minimum": 1 },
+        "reason": { "type": ["string", "null"] },
+        "dispatch": { "type": ["object", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "EventRead": {
+      "type": "object",
+      "required": ["id", "event_type", "run_id", "task_id", "payload", "created_at"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "event_type": { "type": "string", "minLength": 1 },
+        "run_id": { "type": ["integer", "null"], "minimum": 1 },
+        "task_id": { "type": ["integer", "null"], "minimum": 1 },
+        "payload": { "type": "object" },
+        "created_at": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    }
+  }
+}

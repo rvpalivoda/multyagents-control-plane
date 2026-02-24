@@ -1,0 +1,222 @@
+from fastapi.testclient import TestClient
+
+from multyagents_api.main import app
+
+
+client = TestClient(app)
+
+
+def test_contract_version_endpoint() -> None:
+    response = client.get("/contracts/current")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["contract_version"] == "v1"
+    assert body["schema_file"] == "packages/contracts/v1/context7.schema.json"
+
+
+def test_dispatch_inherits_role_context7_setting() -> None:
+    role = client.post("/roles", json={"name": "coder", "context7_enabled": True}).json()
+    task = client.post(
+        "/tasks",
+        json={"role_id": role["id"], "title": "implement api", "context7_mode": "inherit"},
+    ).json()
+    assert task["execution_mode"] == "no-workspace"
+    assert task["requires_approval"] is False
+
+    dispatched = client.post(f"/tasks/{task['id']}/dispatch")
+    assert dispatched.status_code == 200
+    body = dispatched.json()
+
+    assert body["resolved_context7_enabled"] is True
+    assert body["runner_payload"]["context"]["provider"] == "context7"
+    assert body["runner_payload"]["context"]["enabled"] is True
+    assert body["runner_payload"]["execution_mode"] == "no-workspace"
+    assert body["runner_payload"]["workspace"] is None
+    assert body["runner_submission"]["submitted"] is False
+
+    audit = client.get(f"/tasks/{task['id']}/audit")
+    assert audit.status_code == 200
+    assert audit.json()["resolved_context7_enabled"] is True
+    assert audit.json()["execution_mode"] == "no-workspace"
+    assert audit.json()["requires_approval"] is False
+    assert audit.json()["approval_status"] is None
+    assert audit.json()["project_id"] is None
+    assert audit.json()["lock_paths"] == []
+
+
+def test_dispatch_force_off_overrides_role_context7_setting() -> None:
+    role = client.post("/roles", json={"name": "writer", "context7_enabled": True}).json()
+    task = client.post(
+        "/tasks",
+        json={"role_id": role["id"], "title": "write docs", "context7_mode": "force_off"},
+    ).json()
+
+    dispatched = client.post(f"/tasks/{task['id']}/dispatch")
+    assert dispatched.status_code == 200
+
+    body = dispatched.json()
+    assert body["resolved_context7_enabled"] is False
+    assert body["runner_payload"]["context"]["enabled"] is False
+
+
+def test_dispatch_force_on_overrides_role_context7_setting() -> None:
+    role = client.post("/roles", json={"name": "qa", "context7_enabled": False}).json()
+    task = client.post(
+        "/tasks",
+        json={"role_id": role["id"], "title": "validate library", "context7_mode": "force_on"},
+    ).json()
+
+    dispatched = client.post(f"/tasks/{task['id']}/dispatch")
+    assert dispatched.status_code == 200
+    assert dispatched.json()["resolved_context7_enabled"] is True
+
+
+def test_task_can_set_explicit_execution_mode() -> None:
+    role = client.post("/roles", json={"name": "ops", "context7_enabled": False}).json()
+    project = client.post(
+        "/projects",
+        json={
+            "name": "isolated-project",
+            "root_path": "/tmp/multyagents/isolated-project",
+            "allowed_paths": ["/tmp/multyagents/isolated-project/src"],
+        },
+    ).json()
+    task = client.post(
+        "/tasks",
+        json={
+            "role_id": role["id"],
+            "title": "run isolated",
+            "context7_mode": "inherit",
+            "execution_mode": "isolated-worktree",
+            "project_id": project["id"],
+        },
+    )
+    assert task.status_code == 200
+    assert task.json()["execution_mode"] == "isolated-worktree"
+    assert task.json()["project_id"] == project["id"]
+    assert task.json()["lock_paths"] == []
+
+
+def test_isolated_worktree_requires_project_id() -> None:
+    role = client.post("/roles", json={"name": "isolated-no-project", "context7_enabled": False}).json()
+    task = client.post(
+        "/tasks",
+        json={
+            "role_id": role["id"],
+            "title": "missing project",
+            "context7_mode": "inherit",
+            "execution_mode": "isolated-worktree",
+        },
+    )
+    assert task.status_code == 422
+
+
+def test_isolated_worktree_dispatch_contains_worktree_metadata(monkeypatch) -> None:
+    class _FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, str]:
+            return {"status": "queued"}
+
+    captured_payload: dict[str, object] = {}
+
+    def fake_post(*args, **kwargs):  # noqa: ANN002, ANN003
+        nonlocal captured_payload
+        captured_payload = kwargs["json"]
+        return _FakeResponse()
+
+    monkeypatch.setenv("HOST_RUNNER_URL", "http://runner.test")
+    monkeypatch.setattr("multyagents_api.runner_client.httpx.post", fake_post)
+
+    role = client.post("/roles", json={"name": "isolated-dispatch-role", "context7_enabled": False}).json()
+    project = client.post(
+        "/projects",
+        json={
+            "name": "isolated-dispatch-project",
+            "root_path": "/tmp/multyagents/isolated-dispatch",
+            "allowed_paths": ["/tmp/multyagents/isolated-dispatch/src"],
+        },
+    ).json()
+    task = client.post(
+        "/tasks",
+        json={
+            "role_id": role["id"],
+            "title": "isolated dispatch",
+            "context7_mode": "inherit",
+            "execution_mode": "isolated-worktree",
+            "project_id": project["id"],
+        },
+    ).json()
+
+    dispatched = client.post(f"/tasks/{task['id']}/dispatch")
+    assert dispatched.status_code == 200
+    workspace = dispatched.json()["runner_payload"]["workspace"]
+    assert workspace["project_id"] == project["id"]
+    assert workspace["project_root"] == "/tmp/multyagents/isolated-dispatch"
+    assert workspace["worktree_path"].endswith(f"/.multyagents/worktrees/task-{task['id']}")
+    assert workspace["git_branch"] == f"multyagents/task-{task['id']}"
+    assert captured_payload["workspace"]["worktree_path"] == workspace["worktree_path"]
+    assert captured_payload["workspace"]["git_branch"] == workspace["git_branch"]
+
+
+def test_dispatch_reports_runner_submit_success_when_runner_available(monkeypatch) -> None:
+    class _FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, str]:
+            return {"status": "queued"}
+
+    def fake_post(*args, **kwargs):  # noqa: ANN002, ANN003
+        return _FakeResponse()
+
+    monkeypatch.setenv("HOST_RUNNER_URL", "http://runner.test")
+    monkeypatch.setattr("multyagents_api.runner_client.httpx.post", fake_post)
+
+    role = client.post("/roles", json={"name": "runner-role", "context7_enabled": True}).json()
+    task = client.post(
+        "/tasks",
+        json={"role_id": role["id"], "title": "runner task", "context7_mode": "inherit"},
+    ).json()
+
+    response = client.post(f"/tasks/{task['id']}/dispatch")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["runner_submission"]["submitted"] is True
+    assert body["runner_submission"]["runner_task_status"] == "queued"
+    assert body["runner_submission"]["runner_url"] == "http://runner.test"
+
+    monkeypatch.delenv("HOST_RUNNER_URL")
+
+
+def test_dispatch_includes_runner_callback_fields_when_configured(monkeypatch) -> None:
+    captured_payload: dict[str, object] = {}
+
+    class _FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, str]:
+            return {"status": "queued"}
+
+    def fake_post(*args, **kwargs):  # noqa: ANN002, ANN003
+        nonlocal captured_payload
+        captured_payload = kwargs["json"]
+        return _FakeResponse()
+
+    monkeypatch.setenv("HOST_RUNNER_URL", "http://runner.test")
+    monkeypatch.setenv("API_RUNNER_CALLBACK_BASE_URL", "http://localhost:8000")
+    monkeypatch.setenv("API_RUNNER_CALLBACK_TOKEN", "runner-secret")
+    monkeypatch.setattr("multyagents_api.runner_client.httpx.post", fake_post)
+
+    role = client.post("/roles", json={"name": "runner-callback-role", "context7_enabled": True}).json()
+    task = client.post(
+        "/tasks",
+        json={"role_id": role["id"], "title": "callback task", "context7_mode": "inherit"},
+    ).json()
+
+    response = client.post(f"/tasks/{task['id']}/dispatch")
+    assert response.status_code == 200
+    assert captured_payload["status_callback_url"] == f"http://localhost:8000/runner/tasks/{task['id']}/status"
+    assert captured_payload["status_callback_token"] == "runner-secret"
