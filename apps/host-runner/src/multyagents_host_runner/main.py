@@ -622,13 +622,6 @@ def _sandbox_container_name(task_id: str) -> str:
 def _stop_docker_container(container_id: str | None) -> None:
     if not container_id:
         return
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in ("1", "true", "yes", "on")
     try:
         subprocess.run(
             ["docker", "rm", "-f", container_id],
@@ -639,6 +632,13 @@ def _env_bool(name: str, default: bool) -> bool:
         )
     except Exception:  # noqa: BLE001
         return
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
 
 
 def _is_canceled(task_id: str) -> bool:
