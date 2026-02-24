@@ -27,8 +27,8 @@
 - `TASK-020` (`P1`, `review`): Add project management UI with API update/delete support
 - `TASK-028` (`P1`, `review`): Add task listing API and UI task explorer
 - `TASK-034` (`P0`, `review`): Add event and artifact contract plus persistence APIs
-- `TASK-035` (`P1`, `review`): Enable artifact-based handoff in workflow DAG
-- `TASK-036` (`P1`, `review`): Implement skill-pack management in API and UI
+- `TASK-035` (`P1`, `done`): Enable artifact-based handoff in workflow DAG
+- `TASK-036` (`P1`, `done`): Implement skill-pack management in API and UI
 
 ### EPIC-3 Execution and runner
 - `TASK-007` (`P0`, `review`): Implement host runner protocol (submit/cancel/status)
@@ -41,7 +41,7 @@
 - `TASK-024` (`P0`, `review`): Add workflow DAG run expansion and dispatch-ready endpoint
 - `TASK-026` (`P0`, `review`): Implement isolated-worktree mode with git worktree lifecycle
 - `TASK-032` (`P0`, `review`): Implement docker-sandbox execution mode
-- `TASK-033` (`P1`, `review`): Harden docker-sandbox isolation and path policy
+- `TASK-033` (`P1`, `done`): Harden docker-sandbox isolation and path policy
 
 ### EPIC-4 Human-in-the-loop
 - `TASK-010` (`P1`, `review`): Telegram bot command set (`run/status/approve/pause/resume/abort`)

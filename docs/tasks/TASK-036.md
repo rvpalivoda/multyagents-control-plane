@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `review`
+- Status: `done`
 - Priority: `P1`
 - Owner: `codex`
 - Created: `2026-02-23`
@@ -48,7 +48,7 @@ Execution lane:
 
 - [x] API tests for skill-pack CRUD and role-assignment validation.
 - [x] UI tests for create/edit/delete flows.
-- [ ] Integration test for workflow dispatch payload including resolved skill-packs.
+- [x] Integration test for workflow dispatch payload including resolved skill-packs.
 
 ## Risks and mitigations
 
@@ -66,8 +66,9 @@ Implemented `skill_pack` management in API and UI:
 
 Execution evidence:
 
-- `apps/api`: `pytest -q` -> `63 passed`.
+- `apps/api`: `pytest -q` -> `66 passed`.
 - `apps/ui`: `npm run build` -> success.
 
 Commits:
 - `79be420` (`feat(task-036): add skill-pack api and ui management`)
+- `a2709ce` (`feat(task-036): include role skill packs in dispatch payload`)
