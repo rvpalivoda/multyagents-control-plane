@@ -64,6 +64,13 @@
 ### EPIC-6 Knowledge providers
 - `TASK-015` (`P1`, `done`): Integrate Context7 into role/task policy, runner payloads, and UI controls
 
+
+### EPIC-7 Workflow authoring UX
+- `TASK-042` (`P0`, `in_progress`): Workflow builder quick-create UX
+- `TASK-043` (`P0`, `todo`): Inline validation and cycle prevention in workflow builder
+- `TASK-044` (`P1`, `todo`): Add UI test harness and critical workflow builder tests
+- `TASK-045` (`P1`, `todo`): Update operator docs for workflow creation
+
 ## Operating rule
 
 Before starting implementation, create/update task file from template:
