@@ -317,7 +317,14 @@ def test_docker_sandbox_execution_runs_docker_command(monkeypatch) -> None:
     assert terminal["executor"] == "docker-sandbox"
     assert terminal["container_id"] == "multyagents-task-11"
     assert terminal["stdout"] == "sandbox ok"
-    assert any(cmd[:2] == ["docker", "run"] for cmd in calls)
+    run_command = next(cmd for cmd in calls if cmd[:2] == ["docker", "run"])
+    assert "--read-only" in run_command
+    assert "--cap-drop" in run_command and "ALL" in run_command
+    assert "--security-opt" in run_command and "no-new-privileges:true" in run_command
+    assert "--network" in run_command and "none" in run_command
+    assert "--pids-limit" in run_command and "256" in run_command
+    assert "--memory" in run_command and "2g" in run_command
+    assert "--cpus" in run_command and "2.0" in run_command
 
 
 def test_cancel_docker_sandbox_forces_container_stop(monkeypatch) -> None:

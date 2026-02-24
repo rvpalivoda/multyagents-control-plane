@@ -174,3 +174,91 @@ def test_docker_sandbox_runner_status_updates_audit() -> None:
     assert audit.json()["sandbox_container_id"] == "multyagents-task-1"
     assert audit.json()["sandbox_exit_code"] == 125
     assert audit.json()["sandbox_error"] == "docker run failed"
+
+
+def test_docker_sandbox_dispatch_rejects_mount_outside_allowed_paths() -> None:
+    role_id = _create_role("docker-deny")
+    project_id = _create_project(
+        name="docker-deny-project",
+        root_path="/tmp/multyagents/docker-deny",
+        allowed_path="/tmp/multyagents/docker-deny/src",
+    )
+    task = client.post(
+        "/tasks",
+        json={
+            "role_id": role_id,
+            "title": "deny mount",
+            "execution_mode": "docker-sandbox",
+            "project_id": project_id,
+            "sandbox": {
+                "image": "alpine:3.20",
+                "command": ["sh", "-lc", "echo deny"],
+                "workdir": "/workspace/project",
+                "mounts": [
+                    {
+                        "source": "/tmp/multyagents/docker-deny/secret",
+                        "target": "/workspace/project",
+                        "read_only": False,
+                    }
+                ],
+            },
+        },
+    )
+    assert task.status_code == 200
+
+    dispatch = client.post(f"/tasks/{task.json()['id']}/dispatch")
+    assert dispatch.status_code == 422
+    assert "outside allowed paths" in dispatch.json()["detail"]
+
+
+def test_docker_sandbox_runner_status_emits_lifecycle_events() -> None:
+    role_id = _create_role("docker-lifecycle")
+    project_id = _create_project(
+        name="docker-lifecycle-project",
+        root_path="/tmp/multyagents/docker-lifecycle",
+        allowed_path="/tmp/multyagents/docker-lifecycle/src",
+    )
+    task = client.post(
+        "/tasks",
+        json={
+            "role_id": role_id,
+            "title": "lifecycle update",
+            "execution_mode": "docker-sandbox",
+            "project_id": project_id,
+            "sandbox": {
+                "image": "alpine:3.20",
+                "command": ["sh", "-lc", "echo ok"],
+                "workdir": "/workspace/project",
+            },
+        },
+    )
+    assert task.status_code == 200
+    task_id = task.json()["id"]
+    assert client.post(f"/tasks/{task_id}/dispatch").status_code == 200
+
+    running = client.post(
+        f"/runner/tasks/{task_id}/status",
+        json={
+            "status": "running",
+            "message": "container started",
+            "container_id": "multyagents-task-running",
+        },
+    )
+    assert running.status_code == 200
+
+    success = client.post(
+        f"/runner/tasks/{task_id}/status",
+        json={
+            "status": "success",
+            "message": "container done",
+            "exit_code": 0,
+            "container_id": "multyagents-task-running",
+        },
+    )
+    assert success.status_code == 200
+
+    lifecycle_events = client.get(f"/events?task_id={task_id}&limit=100")
+    assert lifecycle_events.status_code == 200
+    event_types = [item["event_type"] for item in lifecycle_events.json()]
+    assert "sandbox.started" in event_types
+    assert "sandbox.stopped" in event_types

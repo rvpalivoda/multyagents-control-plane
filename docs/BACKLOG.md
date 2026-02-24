@@ -41,7 +41,7 @@
 - `TASK-024` (`P0`, `review`): Add workflow DAG run expansion and dispatch-ready endpoint
 - `TASK-026` (`P0`, `review`): Implement isolated-worktree mode with git worktree lifecycle
 - `TASK-032` (`P0`, `review`): Implement docker-sandbox execution mode
-- `TASK-033` (`P1`, `in_progress`): Harden docker-sandbox isolation and path policy
+- `TASK-033` (`P1`, `review`): Harden docker-sandbox isolation and path policy
 
 ### EPIC-4 Human-in-the-loop
 - `TASK-010` (`P1`, `review`): Telegram bot command set (`run/status/approve/pause/resume/abort`)
