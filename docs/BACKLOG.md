@@ -30,7 +30,7 @@
 - `TASK-035` (`P1`, `done`): Enable artifact-based handoff in workflow DAG
 - `TASK-036` (`P1`, `done`): Implement skill-pack management in API and UI
 - `TASK-037` (`P1`, `done`): Improve control-panel UX navigation and approvals workflow
-- `TASK-038` (`P1`, `in_progress`): Migrate UI to Tailwind and deliver full-width modern admin layout
+- `TASK-038` (`P1`, `done`): Migrate UI to Tailwind and deliver full-width modern admin layout
 
 ### EPIC-3 Execution and runner
 - `TASK-007` (`P0`, `done`): Implement host runner protocol (submit/cancel/status)
