@@ -54,4 +54,9 @@ Start with strict defaults and explicit allowlist exceptions. Keep policy evalua
 
 ## Result
 
-Planned.
+- Progress update (2026-02-24):
+  - Fixed docker sandbox cancellation cleanup in host-runner so `docker rm -f <container>` is called on cancel.
+  - Commit: `9270ece` (`fix(task-033): stop docker container on cancel`)
+  - Validation:
+    - `apps/host-runner`: `pytest -q tests/test_runner_api.py::test_cancel_docker_sandbox_forces_container_stop` -> passed
+    - `apps/host-runner`: `pytest -q` -> `12 passed`

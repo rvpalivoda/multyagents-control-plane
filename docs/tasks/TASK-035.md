@@ -2,11 +2,11 @@
 
 ## Metadata
 
-- Status: `todo`
+- Status: `in_progress`
 - Priority: `P1`
 - Owner: `codex`
 - Created: `2026-02-23`
-- Updated: `2026-02-23`
+- Updated: `2026-02-24`
 
 ## Objective
 
@@ -40,6 +40,9 @@ Allow downstream steps to consume explicit artifacts/events from upstream steps 
 ## Implementation notes
 
 Keep default behavior unchanged for workflows without handoff filters to preserve backward compatibility.
+
+Execution lane:
+- Lane B in `docs/EXECUTION_BOARD.md` (parallel implementation track).
 
 ## Test plan
 

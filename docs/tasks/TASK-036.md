@@ -2,11 +2,11 @@
 
 ## Metadata
 
-- Status: `todo`
+- Status: `in_progress`
 - Priority: `P1`
 - Owner: `codex`
 - Created: `2026-02-23`
-- Updated: `2026-02-23`
+- Updated: `2026-02-24`
 
 ## Objective
 
@@ -40,6 +40,9 @@ Provide full operator flow to manage skill-packs and attach them to roles from c
 ## Implementation notes
 
 Read catalog from `docs/SKILLS_CATALOG.md` initially; move to dedicated registry API later if needed.
+
+Execution lane:
+- Lane C in `docs/EXECUTION_BOARD.md` (parallel implementation track).
 
 ## Test plan
 

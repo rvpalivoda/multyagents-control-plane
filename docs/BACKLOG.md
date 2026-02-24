@@ -27,8 +27,8 @@
 - `TASK-020` (`P1`, `review`): Add project management UI with API update/delete support
 - `TASK-028` (`P1`, `review`): Add task listing API and UI task explorer
 - `TASK-034` (`P0`, `review`): Add event and artifact contract plus persistence APIs
-- `TASK-035` (`P1`, `todo`): Enable artifact-based handoff in workflow DAG
-- `TASK-036` (`P1`, `todo`): Implement skill-pack management in API and UI
+- `TASK-035` (`P1`, `in_progress`): Enable artifact-based handoff in workflow DAG
+- `TASK-036` (`P1`, `in_progress`): Implement skill-pack management in API and UI
 
 ### EPIC-3 Execution and runner
 - `TASK-007` (`P0`, `review`): Implement host runner protocol (submit/cancel/status)
