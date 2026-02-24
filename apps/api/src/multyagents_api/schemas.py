@@ -232,6 +232,7 @@ class RunnerSubmitPayload(BaseModel):
     role_id: int
     title: str
     execution_mode: ExecutionMode
+    role_skill_packs: list[str] = Field(default_factory=list)
     context: RunnerContext
     workspace: RunnerWorkspaceContext | None = None
     sandbox: SandboxConfig | None = None

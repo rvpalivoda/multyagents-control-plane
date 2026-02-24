@@ -780,6 +780,7 @@ class InMemoryStore:
             role_id=task.role_id,
             title=task.title,
             execution_mode=task.execution_mode,
+            role_skill_packs=role.skill_packs,
             context=RunnerContext(enabled=resolved),
             workspace=workspace,
             sandbox=sandbox,

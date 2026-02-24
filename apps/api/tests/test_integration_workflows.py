@@ -302,3 +302,50 @@ def test_workflow_integration_artifact_handoff_chain() -> None:
     report_audit = client.get(f"/tasks/{report_task_id}/audit")
     assert report_audit.status_code == 200
     assert handoff_artifact_id in report_audit.json()["consumed_artifact_ids"]
+
+
+def test_workflow_dispatch_payload_includes_resolved_role_skill_packs() -> None:
+    skill_pack = client.post(
+        "/skill-packs",
+        json={
+            "name": "int-dispatch-pack",
+            "skills": ["skills/task-governance", "skills/api-orchestrator-fastapi"],
+        },
+    )
+    assert skill_pack.status_code == 200
+
+    role = client.post(
+        "/roles",
+        json={
+            "name": "int-dispatch-role",
+            "context7_enabled": True,
+            "skill_packs": ["int-dispatch-pack"],
+        },
+    )
+    assert role.status_code == 200
+    role_id = role.json()["id"]
+
+    workflow_template = client.post(
+        "/workflow-templates",
+        json={
+            "name": "int-dispatch-skill-flow",
+            "steps": [
+                {"step_id": "single", "role_id": role_id, "title": "Single step", "depends_on": []},
+            ],
+        },
+    )
+    assert workflow_template.status_code == 200
+
+    run = client.post(
+        "/workflow-runs",
+        json={"workflow_template_id": workflow_template.json()["id"], "initiated_by": "integration-test"},
+    )
+    assert run.status_code == 200
+    run_id = run.json()["id"]
+    task_id = run.json()["task_ids"][0]
+
+    dispatch = client.post(f"/workflow-runs/{run_id}/dispatch-ready")
+    assert dispatch.status_code == 200
+    assert dispatch.json()["dispatched"] is True
+    assert dispatch.json()["task_id"] == task_id
+    assert dispatch.json()["dispatch"]["runner_payload"]["role_skill_packs"] == ["int-dispatch-pack"]
