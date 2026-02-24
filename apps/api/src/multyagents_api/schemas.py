@@ -274,6 +274,7 @@ class TaskAudit(BaseModel):
     sandbox_container_id: str | None = None
     sandbox_exit_code: int | None = None
     sandbox_error: str | None = None
+    consumed_artifact_ids: list[int] = Field(default_factory=list)
     produced_artifact_ids: list[int] = Field(default_factory=list)
     recent_event_ids: list[int] = Field(default_factory=list)
 
@@ -416,6 +417,20 @@ class WorkflowStep(BaseModel):
     role_id: int
     title: str = Field(min_length=1)
     depends_on: list[str] = Field(default_factory=list)
+    required_artifacts: list["WorkflowArtifactRequirement"] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_required_artifacts(self) -> "WorkflowStep":
+        for requirement in self.required_artifacts:
+            if requirement.from_step_id is not None and requirement.from_step_id not in self.depends_on:
+                raise ValueError("workflow required_artifacts.from_step_id must reference depends_on step")
+        return self
+
+
+class WorkflowArtifactRequirement(BaseModel):
+    from_step_id: str | None = None
+    artifact_type: ArtifactType | None = None
+    label: str | None = None
 
 
 class WorkflowTemplateCreate(BaseModel):

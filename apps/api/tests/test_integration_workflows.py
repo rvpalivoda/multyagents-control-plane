@@ -230,3 +230,75 @@ def test_code_workflow_integration_docker_sandbox() -> None:
     run_event_types = [item["event_type"] for item in run_events.json()]
     assert "workflow_run.created" in run_event_types
     assert "task.runner_status_updated" in run_event_types
+
+
+def test_workflow_integration_artifact_handoff_chain() -> None:
+    role = client.post("/roles", json={"name": "int-handoff-role", "context7_enabled": True})
+    assert role.status_code == 200
+    role_id = role.json()["id"]
+
+    workflow_template = client.post(
+        "/workflow-templates",
+        json={
+            "name": "int-handoff-flow",
+            "steps": [
+                {"step_id": "code", "role_id": role_id, "title": "Code", "depends_on": []},
+                {
+                    "step_id": "report",
+                    "role_id": role_id,
+                    "title": "Report",
+                    "depends_on": ["code"],
+                    "required_artifacts": [
+                        {"from_step_id": "code", "artifact_type": "report", "label": "handoff"}
+                    ],
+                },
+            ],
+        },
+    )
+    assert workflow_template.status_code == 200
+    workflow_template_id = workflow_template.json()["id"]
+
+    run = client.post(
+        "/workflow-runs",
+        json={"workflow_template_id": workflow_template_id, "initiated_by": "integration-test"},
+    )
+    assert run.status_code == 200
+    run_id = run.json()["id"]
+    code_task_id = run.json()["task_ids"][0]
+    report_task_id = run.json()["task_ids"][1]
+
+    code_dispatch = client.post(f"/workflow-runs/{run_id}/dispatch-ready")
+    assert code_dispatch.status_code == 200
+    assert code_dispatch.json()["dispatched"] is True
+    assert code_dispatch.json()["task_id"] == code_task_id
+
+    code_success = client.post(f"/runner/tasks/{code_task_id}/status", json={"status": "success"})
+    assert code_success.status_code == 200
+
+    blocked_report = client.post(f"/workflow-runs/{run_id}/dispatch-ready")
+    assert blocked_report.status_code == 200
+    assert blocked_report.json()["dispatched"] is False
+    assert blocked_report.json()["reason"] == "artifacts not satisfied"
+
+    handoff_artifact = client.post(
+        "/artifacts",
+        json={
+            "artifact_type": "report",
+            "location": "/tmp/multyagents/int-handoff/report.md",
+            "summary": "handoff report",
+            "producer_task_id": code_task_id,
+            "run_id": run_id,
+            "metadata": {"label": "handoff"},
+        },
+    )
+    assert handoff_artifact.status_code == 200
+    handoff_artifact_id = handoff_artifact.json()["id"]
+
+    report_dispatch = client.post(f"/workflow-runs/{run_id}/dispatch-ready")
+    assert report_dispatch.status_code == 200
+    assert report_dispatch.json()["dispatched"] is True
+    assert report_dispatch.json()["task_id"] == report_task_id
+
+    report_audit = client.get(f"/tasks/{report_task_id}/audit")
+    assert report_audit.status_code == 200
+    assert handoff_artifact_id in report_audit.json()["consumed_artifact_ids"]

@@ -111,6 +111,7 @@ class _WorkflowRunRecord:
     created_at: str
     updated_at: str
     step_dependencies: dict[int, list[int]] = field(default_factory=dict)
+    step_artifact_requirements: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
 
 
 @dataclass
@@ -304,6 +305,7 @@ class InMemoryStore:
 
         resolved_task_ids = list(run.task_ids)
         step_dependencies: dict[int, list[int]] = {}
+        step_artifact_requirements: dict[int, list[dict[str, Any]]] = {}
         if run.workflow_template_id is not None and not resolved_task_ids:
             template = self._workflow_templates[run.workflow_template_id]
             step_to_task_id: dict[str, int] = {}
@@ -322,6 +324,23 @@ class InMemoryStore:
                 task_id = step_to_task_id[step.step_id]
                 dependencies = [step_to_task_id[dep] for dep in step.depends_on]
                 step_dependencies[task_id] = dependencies
+                mapped_requirements: list[dict[str, Any]] = []
+                for requirement in step.required_artifacts:
+                    from_task_ids: list[int]
+                    if requirement.from_step_id is not None:
+                        from_task_ids = [step_to_task_id[requirement.from_step_id]]
+                    else:
+                        from_task_ids = [step_to_task_id[dep] for dep in step.depends_on]
+                    mapped_requirements.append(
+                        {
+                            "from_task_ids": from_task_ids,
+                            "artifact_type": requirement.artifact_type.value
+                            if requirement.artifact_type is not None
+                            else None,
+                            "label": requirement.label,
+                        }
+                    )
+                step_artifact_requirements[task_id] = mapped_requirements
 
             resolved_task_ids = [step_to_task_id[step.step_id] for step in template.steps]
 
@@ -337,6 +356,7 @@ class InMemoryStore:
             created_at=now,
             updated_at=now,
             step_dependencies=step_dependencies,
+            step_artifact_requirements=step_artifact_requirements,
         )
         self._workflow_runs[run_id] = record
 
@@ -373,7 +393,7 @@ class InMemoryStore:
     def abort_workflow_run(self, run_id: int) -> WorkflowRunRead:
         return self._set_workflow_run_status(run_id, WorkflowRunStatus.ABORTED, "workflow_run.aborted")
 
-    def next_dispatchable_task_id(self, run_id: int) -> tuple[int | None, str | None]:
+    def next_dispatchable_task_id(self, run_id: int) -> tuple[int | None, str | None, list[int]]:
         run = self._workflow_runs.get(run_id)
         if run is None:
             raise NotFoundError(f"workflow run {run_id} not found")
@@ -384,6 +404,7 @@ class InMemoryStore:
             raise ConflictError(f"workflow run {run_id} is paused")
 
         dependency_blocked = False
+        artifact_blocked = False
         for task_id in run.task_ids:
             task = self._tasks.get(task_id)
             if task is None:
@@ -397,11 +418,18 @@ class InMemoryStore:
                 and self._tasks[dep_task_id].status == TaskStatus.SUCCESS.value
                 for dep_task_id in dependencies
             ):
-                return task_id, None
+                consumed_artifact_ids = self._resolve_handoff_artifacts(run_id=run.id, task_id=task_id)
+                if consumed_artifact_ids is None:
+                    artifact_blocked = True
+                    continue
+                return task_id, None, consumed_artifact_ids
             dependency_blocked = True
 
-        reason = "dependencies not satisfied" if dependency_blocked else "no ready tasks"
-        return None, reason
+        if dependency_blocked:
+            return None, "dependencies not satisfied", []
+        if artifact_blocked:
+            return None, "artifacts not satisfied", []
+        return None, "no ready tasks", []
 
     def create_event(self, event: EventCreate) -> EventRead:
         if event.run_id is not None and event.run_id not in self._workflow_runs:
@@ -656,7 +684,7 @@ class InMemoryStore:
             records = list(self._tasks.values())
         return [self._to_task_read(record) for record in records]
 
-    def dispatch_task(self, task_id: int) -> DispatchResponse:
+    def dispatch_task(self, task_id: int, *, consumed_artifact_ids: list[int] | None = None) -> DispatchResponse:
         task = self.get_task(task_id)
         role = self.get_role(task.role_id)
         run_id = self._task_latest_run.get(task.id)
@@ -699,6 +727,9 @@ class InMemoryStore:
             sandbox=sandbox,
         )
 
+        if consumed_artifact_ids is None:
+            consumed_artifact_ids = []
+
         self._audits[task.id] = TaskAudit(
             task_id=task.id,
             role_id=task.role_id,
@@ -715,6 +746,7 @@ class InMemoryStore:
             sandbox_container_id=None,
             sandbox_exit_code=None,
             sandbox_error=None,
+            consumed_artifact_ids=consumed_artifact_ids,
         )
         record = self._tasks.get(task.id)
         if record is None:
@@ -731,6 +763,7 @@ class InMemoryStore:
                 "execution_mode": task.execution_mode.value,
                 "context7_enabled": resolved,
                 "requires_approval": task.requires_approval,
+                "consumed_artifact_ids": consumed_artifact_ids,
             },
         )
         if run_id is not None:
@@ -965,6 +998,53 @@ class InMemoryStore:
         released_paths = self._release_task_locks_internal(task_id=task_id, run_id=run_id, emit_event=True)
         self._persist_state()
         return released_paths
+
+    def _resolve_handoff_artifacts(self, *, run_id: int, task_id: int) -> list[int] | None:
+        run = self._workflow_runs.get(run_id)
+        if run is None:
+            raise NotFoundError(f"workflow run {run_id} not found")
+        requirements = run.step_artifact_requirements.get(task_id, [])
+        if not requirements:
+            return []
+
+        resolved_artifact_ids: list[int] = []
+        for requirement in requirements:
+            from_task_ids = {int(value) for value in requirement.get("from_task_ids", [])}
+            expected_type = requirement.get("artifact_type")
+            expected_label = requirement.get("label")
+            matched = [
+                artifact
+                for artifact in self._artifacts
+                if artifact.run_id == run_id
+                and artifact.producer_task_id in from_task_ids
+                and (expected_type is None or artifact.artifact_type.value == expected_type)
+                and self._artifact_has_label(artifact, expected_label)
+            ]
+            if not matched:
+                return None
+            resolved_artifact_ids.extend(artifact.id for artifact in matched)
+
+        deduplicated: list[int] = []
+        for artifact_id in resolved_artifact_ids:
+            if artifact_id in deduplicated:
+                continue
+            deduplicated.append(artifact_id)
+        return deduplicated
+
+    @staticmethod
+    def _artifact_has_label(artifact: ArtifactRead, expected_label: str | None) -> bool:
+        if expected_label is None:
+            return True
+
+        label_value = artifact.metadata.get("label")
+        if isinstance(label_value, str) and label_value == expected_label:
+            return True
+
+        labels_value = artifact.metadata.get("labels")
+        if isinstance(labels_value, list) and expected_label in labels_value:
+            return True
+
+        return False
 
     def _normalize_shared_lock_paths(self, project_id: int, lock_paths: list[str]) -> list[str]:
         project = self._projects.get(project_id)
@@ -1260,6 +1340,7 @@ class InMemoryStore:
             created_at=run.created_at,
             updated_at=self._utc_now(),
             step_dependencies=run.step_dependencies,
+            step_artifact_requirements=run.step_artifact_requirements,
         )
         self._workflow_runs[run_id] = updated
         if event_type is not None:
@@ -1295,6 +1376,7 @@ class InMemoryStore:
             created_at=record.created_at,
             updated_at=self._utc_now(),
             step_dependencies=record.step_dependencies,
+            step_artifact_requirements=record.step_artifact_requirements,
         )
         self._workflow_runs[run_id] = updated
         self._append_event(
@@ -1388,6 +1470,10 @@ class InMemoryStore:
                 step_dependencies={
                     int(task_id): [int(dep_task_id) for dep_task_id in dep_task_ids]
                     for task_id, dep_task_ids in value.get("step_dependencies", {}).items()
+                },
+                step_artifact_requirements={
+                    int(task_id): [dict(requirement) for requirement in requirements]
+                    for task_id, requirements in value.get("step_artifact_requirements", {}).items()
                 },
             )
             for key, value in data.get("workflow_runs", {}).items()

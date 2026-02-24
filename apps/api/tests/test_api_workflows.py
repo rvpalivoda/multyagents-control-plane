@@ -113,3 +113,26 @@ def test_workflow_template_requires_existing_role() -> None:
         },
     )
     assert response.status_code == 404
+
+
+def test_workflow_template_rejects_artifact_requirement_outside_dependencies() -> None:
+    role_id = _create_role("workflow-artifact-dep")
+    response = client.post(
+        "/workflow-templates",
+        json={
+            "name": "bad-handoff-flow",
+            "steps": [
+                {"step_id": "a", "role_id": role_id, "title": "A", "depends_on": []},
+                {
+                    "step_id": "b",
+                    "role_id": role_id,
+                    "title": "B",
+                    "depends_on": ["a"],
+                    "required_artifacts": [
+                        {"from_step_id": "missing", "artifact_type": "report", "label": "handoff"}
+                    ],
+                },
+            ],
+        },
+    )
+    assert response.status_code == 422

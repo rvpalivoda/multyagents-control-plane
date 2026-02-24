@@ -256,7 +256,7 @@ def abort_workflow_run(run_id: int) -> WorkflowRunRead:
 @app.post("/workflow-runs/{run_id}/dispatch-ready", response_model=WorkflowRunDispatchReadyResponse)
 def dispatch_ready_workflow_run(run_id: int) -> WorkflowRunDispatchReadyResponse:
     try:
-        task_id, reason = store.next_dispatchable_task_id(run_id)
+        task_id, reason, consumed_artifact_ids = store.next_dispatchable_task_id(run_id)
         if task_id is None:
             return WorkflowRunDispatchReadyResponse(
                 run_id=run_id,
@@ -264,7 +264,7 @@ def dispatch_ready_workflow_run(run_id: int) -> WorkflowRunDispatchReadyResponse
                 reason=reason,
             )
 
-        dispatch_result = store.dispatch_task(task_id)
+        dispatch_result = store.dispatch_task(task_id, consumed_artifact_ids=consumed_artifact_ids)
         runner_submission = submit_to_runner(dispatch_result.runner_payload)
         store.apply_runner_submission(task_id, runner_submission)
         dispatch_response = DispatchResponse(

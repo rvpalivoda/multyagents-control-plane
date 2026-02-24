@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `in_progress`
+- Status: `review`
 - Priority: `P1`
 - Owner: `codex`
 - Created: `2026-02-23`
@@ -32,10 +32,10 @@ Allow downstream steps to consume explicit artifacts/events from upstream steps 
 
 ## Acceptance criteria
 
-- [ ] Workflow step can declare required artifact types/labels from dependencies.
-- [ ] Dispatcher blocks step until required artifacts are present.
-- [ ] On success, task run shows resolved handoff artifact references.
-- [ ] Integration scenario validates code -> review -> report handoff chain.
+- [x] Workflow step can declare required artifact types/labels from dependencies.
+- [x] Dispatcher blocks step until required artifacts are present.
+- [x] On success, task run shows resolved handoff artifact references.
+- [x] Integration scenario validates code -> review -> report handoff chain.
 
 ## Implementation notes
 
@@ -46,9 +46,9 @@ Execution lane:
 
 ## Test plan
 
-- [ ] Unit tests for readiness logic with and without artifact constraints.
-- [ ] API tests for workflow schema updates and persisted handoff references.
-- [ ] Integration test for multi-step artifact-driven DAG run.
+- [x] Unit tests for readiness logic with and without artifact constraints.
+- [x] API tests for workflow schema updates and persisted handoff references.
+- [x] Integration test for multi-step artifact-driven DAG run.
 
 ## Risks and mitigations
 
@@ -57,4 +57,16 @@ Execution lane:
 
 ## Result
 
-Planned.
+Implemented artifact-based DAG handoff and readiness gating:
+
+- Extended workflow step schema with `required_artifacts` (source dependency, artifact type, label).
+- Added dispatcher readiness checks for artifact constraints in workflow runs.
+- Added consumed handoff artifact references to task audit (`consumed_artifact_ids`).
+- Included consumed artifact references in `task.dispatched` event payload for timeline visibility.
+
+Execution evidence:
+
+- `apps/api`: `pytest -q` -> `60 passed`.
+
+Commits:
+- `<pending commit sha>`
