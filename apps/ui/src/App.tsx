@@ -942,28 +942,28 @@ export function App() {
     }
   }
 
-  const cardClass = "rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm";
-  const sectionClass = "rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm";
-  const labelClass = "text-xs font-medium uppercase tracking-wide text-slate-400";
+  const cardClass = "rounded-xl border border-slate-200 bg-white p-4 shadow-sm";
+  const sectionClass = "rounded-xl border border-slate-200 bg-white p-4 shadow-sm";
+  const labelClass = "text-xs font-medium uppercase tracking-wide text-slate-500";
   const inputClass =
-    "mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-blue-500";
+    "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-0 placeholder:text-slate-400 focus:border-blue-500";
   const textareaClass =
-    "mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-blue-500";
+    "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-0 placeholder:text-slate-400 focus:border-blue-500";
   const buttonClass =
-    "inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 transition hover:border-slate-500 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40";
+    "inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40";
   const primaryButtonClass =
     "inline-flex items-center justify-center rounded-lg border border-blue-500 bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40";
   const tableClass = "w-full min-w-[720px] border-collapse text-left text-sm";
-  const thClass = "border-b border-slate-700 px-2 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400";
-  const tdClass = "border-b border-slate-800 px-2 py-2 text-sm text-slate-200";
+  const thClass = "border-b border-slate-200 px-2 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500";
+  const tdClass = "border-b border-slate-100 px-2 py-2 text-sm text-slate-700";
 
   return (
-    <main className="min-h-screen w-full bg-slate-950 text-slate-100">
+    <main className="min-h-screen w-full bg-slate-50 text-slate-900">
       <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
         <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight">Multiagents Control Panel</h1>
-            <p className="mt-1 text-sm text-slate-400">API: {API_BASE}</p>
+            <p className="mt-1 text-sm text-slate-500">API: {API_BASE}</p>
           </div>
           <button type="button" className={primaryButtonClass} onClick={() => void onRefreshAll()}>
             Refresh all
@@ -1008,7 +1008,7 @@ export function App() {
                 className={
                   active
                     ? "rounded-lg border border-blue-500 bg-blue-600 px-3 py-2 text-sm font-medium text-white"
-                    : "rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-200 hover:border-slate-500 hover:bg-slate-800"
+                    : "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:border-slate-400 hover:bg-slate-50"
                 }
               >
                 {tab.label}
@@ -1018,7 +1018,7 @@ export function App() {
         </nav>
 
         {error && (
-          <div className="mb-4 rounded-lg border border-rose-600/50 bg-rose-950/50 px-3 py-2 text-sm text-rose-200">
+          <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
             Error: {error}
           </div>
         )}
@@ -1026,17 +1026,17 @@ export function App() {
         {activeTab === "overview" && (
           <section className={sectionClass}>
             <h2 className="text-lg font-semibold">Overview</h2>
-            <p className="mt-1 text-sm text-slate-400">Use tabs to focus on one domain at a time.</p>
+            <p className="mt-1 text-sm text-slate-500">Use tabs to focus on one domain at a time.</p>
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-              <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <p className={labelClass}>Selected run</p>
                 <p className="mt-2 text-sm">{selectedRun ? `${selectedRun.id} (${selectedRun.status})` : "none"}</p>
               </div>
-              <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <p className={labelClass}>Selected task</p>
                 <p className="mt-2 text-sm">{task ? `${task.id} (${task.status})` : "none"}</p>
               </div>
-              <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <p className={labelClass}>Selected approval</p>
                 <p className="mt-2 text-sm">{selectedApproval ? `${selectedApproval.id} (${selectedApproval.status})` : "none"}</p>
               </div>
@@ -1083,7 +1083,7 @@ export function App() {
                     <tr
                       key={project.id}
                       onClick={() => selectProject(project)}
-                      className={`cursor-pointer ${project.id === selectedProjectId ? "bg-blue-500/10" : "hover:bg-slate-800/50"}`}
+                      className={`cursor-pointer ${project.id === selectedProjectId ? "bg-blue-50" : "hover:bg-slate-50"}`}
                     >
                       <td className={tdClass}>{project.id}</td>
                       <td className={tdClass}>{project.name}</td>
@@ -1105,9 +1105,9 @@ export function App() {
                 <span className={labelClass}>Role name</span>
                 <input className={inputClass} value={roleName} onChange={(e) => setRoleName(e.target.value)} />
               </label>
-              <label className="flex items-end gap-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
+              <label className="flex items-end gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2">
                 <input type="checkbox" checked={roleContext7Enabled} onChange={(e) => setRoleContext7Enabled(e.target.checked)} />
-                <span className="text-sm text-slate-200">Context7 default</span>
+                <span className="text-sm text-slate-700">Context7 default</span>
               </label>
               <label className="xl:col-span-2">
                 <span className={labelClass}>Allowed tools (comma/newline)</span>
@@ -1133,7 +1133,7 @@ export function App() {
               </div>
             </form>
 
-            <div className="mt-2 text-xs text-slate-400">Available skill packs: {skillPacks.map((pack) => pack.name).join(", ") || "none"}</div>
+            <div className="mt-2 text-xs text-slate-500">Available skill packs: {skillPacks.map((pack) => pack.name).join(", ") || "none"}</div>
 
             <div className="mt-4 overflow-x-auto">
               <table className={tableClass}>
@@ -1151,7 +1151,7 @@ export function App() {
                     <tr
                       key={role.id}
                       onClick={() => selectRole(role)}
-                      className={`cursor-pointer ${role.id === selectedRoleId ? "bg-blue-500/10" : "hover:bg-slate-800/50"}`}
+                      className={`cursor-pointer ${role.id === selectedRoleId ? "bg-blue-50" : "hover:bg-slate-50"}`}
                     >
                       <td className={tdClass}>{role.id}</td>
                       <td className={tdClass}>{role.name}</td>
@@ -1201,7 +1201,7 @@ export function App() {
                     <tr
                       key={pack.id}
                       onClick={() => selectSkillPack(pack)}
-                      className={`cursor-pointer ${pack.id === selectedSkillPackId ? "bg-blue-500/10" : "hover:bg-slate-800/50"}`}
+                      className={`cursor-pointer ${pack.id === selectedSkillPackId ? "bg-blue-50" : "hover:bg-slate-50"}`}
                     >
                       <td className={tdClass}>{pack.id}</td>
                       <td className={tdClass}>{pack.name}</td>
@@ -1254,7 +1254,7 @@ export function App() {
                     <tr
                       key={workflow.id}
                       onClick={() => selectWorkflow(workflow)}
-                      className={`cursor-pointer ${workflow.id === selectedWorkflowId ? "bg-blue-500/10" : "hover:bg-slate-800/50"}`}
+                      className={`cursor-pointer ${workflow.id === selectedWorkflowId ? "bg-blue-50" : "hover:bg-slate-50"}`}
                     >
                       <td className={tdClass}>{workflow.id}</td>
                       <td className={tdClass}>{workflow.name}</td>
@@ -1320,7 +1320,7 @@ export function App() {
                         void loadTasks(run.id);
                         void loadTimelineEvents(run.id, null);
                       }}
-                      className={`cursor-pointer ${run.id === selectedRunId ? "bg-blue-500/10" : "hover:bg-slate-800/50"}`}
+                      className={`cursor-pointer ${run.id === selectedRunId ? "bg-blue-50" : "hover:bg-slate-50"}`}
                     >
                       <td className={tdClass}>{run.id}</td>
                       <td className={tdClass}>{run.status}</td>
@@ -1335,14 +1335,14 @@ export function App() {
 
             <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
               <div>
-                <p className="text-sm text-slate-300">Selected run: {selectedRun ? `${selectedRun.id} (${selectedRun.status})` : "none"}</p>
+                <p className="text-sm text-slate-600">Selected run: {selectedRun ? `${selectedRun.id} (${selectedRun.status})` : "none"}</p>
                 {runDispatchResult && (
-                  <pre className="mt-2 max-h-72 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300">
+                  <pre className="mt-2 max-h-72 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
                     {JSON.stringify(runDispatchResult, null, 2)}
                   </pre>
                 )}
               </div>
-              <pre className="max-h-72 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300">
+              <pre className="max-h-72 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
                 {JSON.stringify(timelineEvents, null, 2)}
               </pre>
             </div>
@@ -1403,7 +1403,7 @@ export function App() {
                           }
                           void loadTimelineEvents(selectedRunId, item.id);
                         }}
-                        className={`cursor-pointer ${task?.id === item.id ? "bg-blue-500/10" : "hover:bg-slate-800/50"}`}
+                        className={`cursor-pointer ${task?.id === item.id ? "bg-blue-50" : "hover:bg-slate-50"}`}
                       >
                         <td className={tdClass}>{item.id}</td>
                         <td className={tdClass}>{item.title}</td>
@@ -1476,14 +1476,14 @@ export function App() {
                   <span className={labelClass}>Project ID</span>
                   <input className={inputClass} value={taskProjectIdInput} onChange={(e) => setTaskProjectIdInput(e.target.value)} disabled={!canCreateTask} placeholder="optional" />
                 </label>
-                <label className="flex items-end gap-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
+                <label className="flex items-end gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2">
                   <input
                     type="checkbox"
                     checked={taskRequiresApproval}
                     onChange={(e) => setTaskRequiresApproval(e.target.checked)}
                     disabled={!canCreateTask}
                   />
-                  <span className="text-sm text-slate-200">Requires approval</span>
+                  <span className="text-sm text-slate-700">Requires approval</span>
                 </label>
                 <label className="md:col-span-2 xl:col-span-4">
                   <span className={labelClass}>Lock paths (comma/newline)</span>
@@ -1502,9 +1502,9 @@ export function App() {
                 </div>
               </form>
               {projects.length > 0 && (
-                <p className="mt-2 text-xs text-slate-400">Known projects: {projects.map((project) => `${project.id}:${project.name}`).join(", ")}</p>
+                <p className="mt-2 text-xs text-slate-500">Known projects: {projects.map((project) => `${project.id}:${project.name}`).join(", ")}</p>
               )}
-              {task && <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300">{JSON.stringify(task, null, 2)}</pre>}
+              {task && <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">{JSON.stringify(task, null, 2)}</pre>}
             </section>
 
             <section className={sectionClass}>
@@ -1527,9 +1527,9 @@ export function App() {
                   Open approval
                 </button>
               </div>
-              {dispatchResult && <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300">{JSON.stringify(dispatchResult, null, 2)}</pre>}
-              {audit && <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300">{JSON.stringify(audit, null, 2)}</pre>}
-              {taskApproval && <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300">{JSON.stringify(taskApproval, null, 2)}</pre>}
+              {dispatchResult && <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">{JSON.stringify(dispatchResult, null, 2)}</pre>}
+              {audit && <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">{JSON.stringify(audit, null, 2)}</pre>}
+              {taskApproval && <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">{JSON.stringify(taskApproval, null, 2)}</pre>}
             </section>
           </div>
         )}
@@ -1600,7 +1600,7 @@ export function App() {
                         setSelectedApprovalId(approval.id);
                         setTaskApproval(approval);
                       }}
-                      className={`cursor-pointer ${selectedApproval?.id === approval.id ? "bg-blue-500/10" : "hover:bg-slate-800/50"}`}
+                      className={`cursor-pointer ${selectedApproval?.id === approval.id ? "bg-blue-50" : "hover:bg-slate-50"}`}
                     >
                       <td className={tdClass}>{approval.id}</td>
                       <td className={tdClass}>{approval.task_id}</td>
