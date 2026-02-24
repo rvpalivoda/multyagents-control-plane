@@ -17,7 +17,7 @@
 - `TASK-002` (`P0`, `done`): Add base docker-compose for core services
 - `TASK-003` (`P1`, `done`): Add shared API contracts and schema versioning
 - `TASK-030` (`P0`, `done`): Add one-command local launcher for full stack lifecycle
-- `TASK-031` (`P1`, `review`): Add Electron desktop wrapper for launcher commands
+- `TASK-031` (`P1`, `done`): Add Electron desktop wrapper for launcher commands
 
 ### EPIC-2 Core orchestration
 - `TASK-004` (`P0`, `done`): Implement project CRUD and local path policy
@@ -26,7 +26,7 @@
 - `TASK-017` (`P1`, `done`): Extend role model with prompts/tools/skill packs/constraints
 - `TASK-020` (`P1`, `done`): Add project management UI with API update/delete support
 - `TASK-028` (`P1`, `done`): Add task listing API and UI task explorer
-- `TASK-034` (`P0`, `review`): Add event and artifact contract plus persistence APIs
+- `TASK-034` (`P0`, `done`): Add event and artifact contract plus persistence APIs
 - `TASK-035` (`P1`, `done`): Enable artifact-based handoff in workflow DAG
 - `TASK-036` (`P1`, `done`): Implement skill-pack management in API and UI
 

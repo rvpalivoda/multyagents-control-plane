@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `review`
+- Status: `done`
 - Priority: `P0`
 - Owner: `codex`
 - Created: `2026-02-23`
@@ -45,7 +45,7 @@ Use additive schema evolution and keep compatibility with existing `/events` tim
 
 - [x] API unit tests for schema validation and persistence behavior.
 - [x] Integration-like API test that emits events/artifacts during run progression.
-- [ ] Contract snapshot test for schema version stability.
+- [x] Contract snapshot test for schema version stability.
 
 ## Risks and mitigations
 
@@ -75,4 +75,8 @@ API endpoints added/extended:
 
 Verification:
 
-- `cd apps/api && .venv/bin/pytest -q` -> `56 passed`
+- `cd apps/api && .venv/bin/pytest -q` -> `66 passed`
+- `GET /contracts/current` stability asserted in API tests (`contract_version=v1`, schema path fixed)
+
+Commits:
+- `28be9f3` (`feat(task-016): bootstrap monorepo baseline`)

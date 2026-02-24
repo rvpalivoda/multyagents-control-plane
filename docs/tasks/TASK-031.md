@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `review`
+- Status: `done`
 - Priority: `P1`
 - Owner: `codex`
 - Created: `2026-02-23`
@@ -47,7 +47,7 @@ Electron app should call existing `scripts/multyagents` and not duplicate orches
 
 - [x] Validate Node/Electron app syntax.
 - [x] Validate launcher command integration from desktop main process.
-- [ ] Run existing regressions and UI build.
+- [x] Run existing regressions and UI build.
 
 ## Risks and mitigations
 
@@ -74,7 +74,12 @@ Verification executed:
 - `npm --prefix apps/desktop install --no-audit --no-fund`
 - `npm --prefix apps/desktop run check`
 - `./scripts/multyagents help` includes `desktop`
+- `npm --prefix apps/ui run build`
+- `cd apps/api && .venv/bin/pytest -q` -> `66 passed`
 
 GUI runtime note:
 
 - Electron window launch was not executed in this headless terminal session.
+
+Commits:
+- `28be9f3` (`feat(task-016): bootstrap monorepo baseline`)
