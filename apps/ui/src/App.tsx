@@ -199,6 +199,8 @@ export function App() {
   const [approvalComment, setApprovalComment] = useState("");
   const [taskSearchInput, setTaskSearchInput] = useState("");
   const [runSearchInput, setRunSearchInput] = useState("");
+  const [globalSearchInput, setGlobalSearchInput] = useState("");
+  const [contextProjectId, setContextProjectId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const selectedRole = useMemo(
@@ -216,12 +218,43 @@ export function App() {
     });
     return mapping;
   }, [roles]);
+  const projectNameById = useMemo(() => {
+    const mapping: Record<number, string> = {};
+    projects.forEach((project) => {
+      mapping[project.id] = project.name;
+    });
+    return mapping;
+  }, [projects]);
+  const workflowNameById = useMemo(() => {
+    const mapping: Record<number, string> = {};
+    workflows.forEach((workflow) => {
+      mapping[workflow.id] = workflow.name;
+    });
+    return mapping;
+  }, [workflows]);
+  const workflowProjectIdById = useMemo(() => {
+    const mapping: Record<number, number | null> = {};
+    workflows.forEach((workflow) => {
+      mapping[workflow.id] = workflow.project_id;
+    });
+    return mapping;
+  }, [workflows]);
+  const taskById = useMemo(() => {
+    const mapping: Record<number, TaskRead> = {};
+    tasks.forEach((item) => {
+      mapping[item.id] = item;
+    });
+    return mapping;
+  }, [tasks]);
+  const mergedTaskQuery = `${taskSearchInput} ${globalSearchInput}`.trim().toLowerCase();
   const filteredTasks = useMemo(() => {
-    const query = taskSearchInput.trim().toLowerCase();
-    if (query.length === 0) {
-      return tasks;
-    }
     return tasks.filter((item) => {
+      if (contextProjectId !== null && item.project_id !== contextProjectId) {
+        return false;
+      }
+      if (mergedTaskQuery.length === 0) {
+        return true;
+      }
       const haystack = [
         String(item.id),
         item.title,
@@ -232,35 +265,104 @@ export function App() {
       ]
         .join(" ")
         .toLowerCase();
-      return haystack.includes(query);
+      return haystack.includes(mergedTaskQuery);
     });
-  }, [taskSearchInput, tasks]);
+  }, [contextProjectId, mergedTaskQuery, tasks]);
+  const mergedRunQuery = `${runSearchInput} ${globalSearchInput}`.trim().toLowerCase();
   const filteredRuns = useMemo(() => {
-    const query = runSearchInput.trim().toLowerCase();
-    if (query.length === 0) {
-      return workflowRuns;
-    }
     return workflowRuns.filter((item) => {
+      const runProjectId =
+        item.workflow_template_id === null ? null : (workflowProjectIdById[item.workflow_template_id] ?? null);
+      if (contextProjectId !== null && runProjectId !== contextProjectId) {
+        return false;
+      }
+      if (mergedRunQuery.length === 0) {
+        return true;
+      }
       const haystack = [
         String(item.id),
         item.status,
         item.initiated_by ?? "",
         item.workflow_template_id === null ? "" : String(item.workflow_template_id),
-        item.task_ids.join(",")
+        item.task_ids.join(","),
+        item.workflow_template_id === null ? "" : (workflowNameById[item.workflow_template_id] ?? ""),
+        runProjectId === null ? "" : (projectNameById[runProjectId] ?? "")
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(mergedRunQuery);
+    });
+  }, [contextProjectId, mergedRunQuery, projectNameById, workflowNameById, workflowProjectIdById, workflowRuns]);
+  const selectedApproval = useMemo(
+    () => approvals.find((item) => item.id === selectedApprovalId) ?? taskApproval,
+    [approvals, selectedApprovalId, taskApproval]
+  );
+  const sortedApprovals = useMemo(() => {
+    const priority = (status: ApprovalStatus): number => {
+      if (status === "pending") {
+        return 0;
+      }
+      if (status === "rejected") {
+        return 1;
+      }
+      return 2;
+    };
+    return [...approvals].sort((left, right) => {
+      const byStatus = priority(left.status) - priority(right.status);
+      if (byStatus !== 0) {
+        return byStatus;
+      }
+      return right.id - left.id;
+    });
+  }, [approvals]);
+  const pendingApprovalsCount = useMemo(
+    () => approvals.filter((item) => item.status === "pending").length,
+    [approvals]
+  );
+  const pendingApprovals = useMemo(
+    () => sortedApprovals.filter((item) => item.status === "pending"),
+    [sortedApprovals]
+  );
+  const filteredApprovals = useMemo(() => {
+    return sortedApprovals.filter((approval) => {
+      const approvalTask = taskById[approval.task_id] ?? null;
+      if (contextProjectId !== null && approvalTask?.project_id !== contextProjectId) {
+        return false;
+      }
+      const query = globalSearchInput.trim().toLowerCase();
+      if (query.length === 0) {
+        return true;
+      }
+      const haystack = [
+        String(approval.id),
+        String(approval.task_id),
+        approval.status,
+        approval.decided_by ?? "",
+        approval.comment ?? "",
+        approvalTask?.title ?? "",
+        approvalTask?.status ?? ""
       ]
         .join(" ")
         .toLowerCase();
       return haystack.includes(query);
     });
-  }, [runSearchInput, workflowRuns]);
-  const selectedApproval = useMemo(
-    () => approvals.find((item) => item.id === selectedApprovalId) ?? taskApproval,
-    [approvals, selectedApprovalId, taskApproval]
+  }, [contextProjectId, globalSearchInput, sortedApprovals, taskById]);
+  const failedRuns = useMemo(
+    () => workflowRuns.filter((item) => item.status === "failed" || item.status === "aborted"),
+    [workflowRuns]
   );
-  const pendingApprovalsCount = useMemo(
-    () => approvals.filter((item) => item.status === "pending").length,
-    [approvals]
+  const failedTasks = useMemo(
+    () => tasks.filter((item) => item.status === "failed" || item.status === "submit-failed"),
+    [tasks]
   );
+  const selectedRunTasks = useMemo(() => {
+    if (!selectedRun) {
+      return [];
+    }
+    return selectedRun.task_ids
+      .map((id) => taskById[id])
+      .filter((item): item is TaskRead => item !== undefined);
+  }, [selectedRun, taskById]);
 
   const canCreateTask = selectedRole !== null;
   const canDispatch = task !== null;
@@ -959,74 +1061,154 @@ export function App() {
 
   return (
     <main className="min-h-screen w-full bg-slate-50 text-slate-900">
-      <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
-        <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight">Multiagents Control Panel</h1>
-            <p className="mt-1 text-sm text-slate-500">API: {API_BASE}</p>
+      <div className="flex min-h-screen w-full">
+        <aside className="hidden w-64 shrink-0 border-r border-slate-200 bg-white px-4 py-6 lg:flex lg:flex-col">
+          <h1 className="text-xl font-semibold tracking-tight">Control Plane</h1>
+          <p className="mt-1 text-xs text-slate-500">Operations Console</p>
+          <nav className="mt-6 flex flex-col gap-2">
+            {UI_TABS.map((tab) => {
+              const active = tab.id === activeTab;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={
+                    active
+                      ? "w-full rounded-lg border border-blue-500 bg-blue-600 px-3 py-2 text-left text-sm font-medium text-white"
+                      : "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                  }
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </nav>
+          <div className="mt-6 space-y-2">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+              <span className="text-slate-500">Pending approvals</span>
+              <div className="text-lg font-semibold">{pendingApprovalsCount}</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+              <span className="text-slate-500">Failed runs</span>
+              <div className="text-lg font-semibold">{failedRuns.length}</div>
+            </div>
           </div>
-          <button type="button" className={primaryButtonClass} onClick={() => void onRefreshAll()}>
-            Refresh all
-          </button>
-        </header>
+        </aside>
 
-        <section className="mb-4 grid w-full grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          <div className={cardClass}>
-            <p className={labelClass}>Projects</p>
-            <p className="mt-2 text-2xl font-semibold">{projects.length}</p>
-          </div>
-          <div className={cardClass}>
-            <p className={labelClass}>Roles</p>
-            <p className="mt-2 text-2xl font-semibold">{roles.length}</p>
-          </div>
-          <div className={cardClass}>
-            <p className={labelClass}>Skill packs</p>
-            <p className="mt-2 text-2xl font-semibold">{skillPacks.length}</p>
-          </div>
-          <div className={cardClass}>
-            <p className={labelClass}>Runs</p>
-            <p className="mt-2 text-2xl font-semibold">{workflowRuns.length}</p>
-          </div>
-          <div className={cardClass}>
-            <p className={labelClass}>Tasks</p>
-            <p className="mt-2 text-2xl font-semibold">{tasks.length}</p>
-          </div>
-          <div className={cardClass}>
-            <p className={labelClass}>Pending approvals</p>
-            <p className="mt-2 text-2xl font-semibold">{pendingApprovalsCount}</p>
-          </div>
-        </section>
+        <div className="flex min-h-screen flex-1 flex-col">
+          <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
+            <div className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
+              <div className="min-w-[220px] flex-1">
+                <h1 className="text-2xl font-semibold tracking-tight">Multiagents Control Panel</h1>
+                <p className="mt-1 text-xs text-slate-500">API: {API_BASE}</p>
+              </div>
+              <label className="min-w-[200px]">
+                <span className={labelClass}>Project context</span>
+                <select
+                  className={inputClass}
+                  value={contextProjectId ?? ""}
+                  onChange={(event) => {
+                    if (event.target.value === "") {
+                      setContextProjectId(null);
+                      return;
+                    }
+                    const parsed = Number(event.target.value);
+                    setContextProjectId(Number.isNaN(parsed) ? null : parsed);
+                  }}
+                >
+                  <option value="">all projects</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={String(project.id)}>
+                      {project.id}: {project.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="min-w-[220px] flex-1">
+                <span className={labelClass}>Global search</span>
+                <input
+                  className={inputClass}
+                  value={globalSearchInput}
+                  onChange={(event) => setGlobalSearchInput(event.target.value)}
+                  placeholder="runs/tasks/workflows"
+                />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className={buttonClass} onClick={() => setActiveTab("runs")}>
+                  New run
+                </button>
+                <button type="button" className={buttonClass} onClick={() => setActiveTab("tasks")}>
+                  New task
+                </button>
+                <button type="button" className={buttonClass} onClick={() => setActiveTab("approvals")}>
+                  Approvals
+                </button>
+                <button type="button" className={primaryButtonClass} onClick={() => void onRefreshAll()}>
+                  Refresh all
+                </button>
+              </div>
+            </div>
+          </header>
 
-        <nav className="mb-6 flex flex-wrap gap-2">
-          {UI_TABS.map((tab) => {
-            const active = tab.id === activeTab;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={
-                  active
-                    ? "rounded-lg border border-blue-500 bg-blue-600 px-3 py-2 text-sm font-medium text-white"
-                    : "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:border-slate-400 hover:bg-slate-50"
-                }
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </nav>
+          <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
+            <section className="mb-4 grid w-full grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+              <div className={cardClass}>
+                <p className={labelClass}>Projects</p>
+                <p className="mt-2 text-2xl font-semibold">{projects.length}</p>
+              </div>
+              <div className={cardClass}>
+                <p className={labelClass}>Roles</p>
+                <p className="mt-2 text-2xl font-semibold">{roles.length}</p>
+              </div>
+              <div className={cardClass}>
+                <p className={labelClass}>Skill packs</p>
+                <p className="mt-2 text-2xl font-semibold">{skillPacks.length}</p>
+              </div>
+              <div className={cardClass}>
+                <p className={labelClass}>Runs</p>
+                <p className="mt-2 text-2xl font-semibold">{workflowRuns.length}</p>
+              </div>
+              <div className={cardClass}>
+                <p className={labelClass}>Tasks</p>
+                <p className="mt-2 text-2xl font-semibold">{tasks.length}</p>
+              </div>
+              <div className={cardClass}>
+                <p className={labelClass}>Pending approvals</p>
+                <p className="mt-2 text-2xl font-semibold">{pendingApprovalsCount}</p>
+              </div>
+            </section>
 
-        {error && (
-          <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-            Error: {error}
-          </div>
-        )}
+            <nav className="mb-6 flex flex-wrap gap-2 lg:hidden">
+              {UI_TABS.map((tab) => {
+                const active = tab.id === activeTab;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={
+                      active
+                        ? "rounded-lg border border-blue-500 bg-blue-600 px-3 py-2 text-sm font-medium text-white"
+                        : "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:border-slate-400 hover:bg-slate-50"
+                    }
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </nav>
+
+            {error && (
+              <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                Error: {error}
+              </div>
+            )}
 
         {activeTab === "overview" && (
           <section className={sectionClass}>
             <h2 className="text-lg font-semibold">Overview</h2>
-            <p className="mt-1 text-sm text-slate-500">Use tabs to focus on one domain at a time.</p>
+            <p className="mt-1 text-sm text-slate-500">Operational snapshot and actions that need attention now.</p>
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <p className={labelClass}>Selected run</p>
@@ -1039,6 +1221,44 @@ export function App() {
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <p className={labelClass}>Selected approval</p>
                 <p className="mt-2 text-sm">{selectedApproval ? `${selectedApproval.id} (${selectedApproval.status})` : "none"}</p>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <p className={labelClass}>Needs attention</p>
+                <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                  <li>Pending approvals: {pendingApprovals.length}</li>
+                  <li>Failed runs: {failedRuns.length}</li>
+                  <li>Failed tasks: {failedTasks.length}</li>
+                </ul>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button type="button" className={buttonClass} onClick={() => setActiveTab("approvals")}>
+                    Open approvals
+                  </button>
+                  <button type="button" className={buttonClass} onClick={() => setActiveTab("runs")}>
+                    Open runs
+                  </button>
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className={labelClass}>Recent pending approvals</p>
+                <div className="mt-2 space-y-1 text-sm text-slate-700">
+                  {pendingApprovals.slice(0, 5).map((approval) => (
+                    <button
+                      key={approval.id}
+                      type="button"
+                      className="block w-full rounded-md px-2 py-1 text-left hover:bg-white"
+                      onClick={() => {
+                        setSelectedApprovalId(approval.id);
+                        setTaskApproval(approval);
+                        setActiveTab("approvals");
+                      }}
+                    >
+                      #{approval.id} - task {approval.task_id}
+                    </button>
+                  ))}
+                  {pendingApprovals.length === 0 && <p className="text-slate-500">No pending approvals.</p>}
+                </div>
               </div>
             </div>
           </section>
@@ -1270,7 +1490,8 @@ export function App() {
 
         {activeTab === "runs" && (
           <section className={sectionClass}>
-            <h2 className="text-lg font-semibold">Workflow Runs and Timeline</h2>
+            <h2 className="text-lg font-semibold">Runs Center</h2>
+            <p className="mt-1 text-sm text-slate-500">Create, filter, and operate runs from one screen.</p>
             <form className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4" onSubmit={onCreateWorkflowRun}>
               <label>
                 <span className={labelClass}>Workflow template ID</span>
@@ -1299,52 +1520,97 @@ export function App() {
               </div>
             </form>
 
-            <div className="mt-4 overflow-x-auto">
-              <table className={tableClass}>
-                <thead>
-                  <tr>
-                    <th className={thClass}>id</th>
-                    <th className={thClass}>status</th>
-                    <th className={thClass}>template</th>
-                    <th className={thClass}>tasks</th>
-                    <th className={thClass}>updated</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRuns.map((run) => (
-                    <tr
-                      key={run.id}
-                      onClick={() => {
-                        setSelectedRunId(run.id);
-                        setTaskFilterRunIdInput(String(run.id));
-                        void loadTasks(run.id);
-                        void loadTimelineEvents(run.id, null);
-                      }}
-                      className={`cursor-pointer ${run.id === selectedRunId ? "bg-blue-50" : "hover:bg-slate-50"}`}
-                    >
-                      <td className={tdClass}>{run.id}</td>
-                      <td className={tdClass}>{run.status}</td>
-                      <td className={tdClass}>{run.workflow_template_id ?? "-"}</td>
-                      <td className={tdClass}>{run.task_ids.join(", ") || "-"}</td>
-                      <td className={tdClass}>{run.updated_at}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-12">
+              <div className="xl:col-span-5">
+                <div className="max-h-[560px] overflow-auto rounded-lg border border-slate-200 bg-white">
+                  <table className={tableClass}>
+                    <thead>
+                      <tr>
+                        <th className={thClass}>id</th>
+                        <th className={thClass}>status</th>
+                        <th className={thClass}>template</th>
+                        <th className={thClass}>project</th>
+                        <th className={thClass}>updated</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredRuns.map((run) => {
+                        const projectId =
+                          run.workflow_template_id === null
+                            ? null
+                            : (workflowProjectIdById[run.workflow_template_id] ?? null);
+                        return (
+                          <tr
+                            key={run.id}
+                            onClick={() => {
+                              setSelectedRunId(run.id);
+                              setTaskFilterRunIdInput(String(run.id));
+                              void loadTasks(run.id);
+                              void loadTimelineEvents(run.id, null);
+                            }}
+                            className={`cursor-pointer ${run.id === selectedRunId ? "bg-blue-50" : "hover:bg-slate-50"}`}
+                          >
+                            <td className={tdClass}>{run.id}</td>
+                            <td className={tdClass}>{run.status}</td>
+                            <td className={tdClass}>
+                              {run.workflow_template_id === null
+                                ? "-"
+                                : `${run.workflow_template_id} ${workflowNameById[run.workflow_template_id] ?? ""}`}
+                            </td>
+                            <td className={tdClass}>
+                              {projectId === null ? "-" : `${projectId} ${projectNameById[projectId] ?? ""}`}
+                            </td>
+                            <td className={tdClass}>{run.updated_at}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-              <div>
-                <p className="text-sm text-slate-600">Selected run: {selectedRun ? `${selectedRun.id} (${selectedRun.status})` : "none"}</p>
+              <div className="xl:col-span-7 space-y-3">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className={labelClass}>Selected run summary</p>
+                  {selectedRun ? (
+                    <div className="mt-2 text-sm text-slate-700">
+                      <p>
+                        Run #{selectedRun.id} ({selectedRun.status})
+                      </p>
+                      <p>Template: {selectedRun.workflow_template_id ?? "-"}</p>
+                      <p>Tasks: {selectedRun.task_ids.join(", ") || "-"}</p>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-500">Select a run from the left table.</p>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className={labelClass}>Tasks in selected run</p>
+                  <div className="mt-2 max-h-40 overflow-auto">
+                    {selectedRunTasks.length === 0 ? (
+                      <p className="text-sm text-slate-500">No task details loaded yet.</p>
+                    ) : (
+                      <ul className="space-y-1 text-sm text-slate-700">
+                        {selectedRunTasks.map((runTask) => (
+                          <li key={runTask.id}>
+                            #{runTask.id} - {runTask.status} - {runTask.title}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+
                 {runDispatchResult && (
-                  <pre className="mt-2 max-h-72 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                  <pre className="max-h-44 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
                     {JSON.stringify(runDispatchResult, null, 2)}
                   </pre>
                 )}
+                <pre className="max-h-64 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                  {JSON.stringify(timelineEvents, null, 2)}
+                </pre>
               </div>
-              <pre className="max-h-72 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-                {JSON.stringify(timelineEvents, null, 2)}
-              </pre>
             </div>
           </section>
         )}
@@ -1537,6 +1803,7 @@ export function App() {
         {activeTab === "approvals" && (
           <section className={sectionClass}>
             <h2 className="text-lg font-semibold">Approvals Inbox</h2>
+            <p className="mt-1 text-sm text-slate-500">Pending approvals are sorted first for faster operator decisions.</p>
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
               <div className="flex flex-wrap items-end gap-2">
                 <button type="button" className={buttonClass} onClick={() => void refreshApprovals()}>
@@ -1581,6 +1848,10 @@ export function App() {
               </div>
             </div>
 
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+              Pending: {pendingApprovals.length} | Total in view: {filteredApprovals.length}
+            </div>
+
             <div className="mt-4 overflow-x-auto">
               <table className={tableClass}>
                 <thead>
@@ -1593,7 +1864,7 @@ export function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {approvals.map((approval) => (
+                  {filteredApprovals.map((approval) => (
                     <tr
                       key={approval.id}
                       onClick={() => {
@@ -1614,6 +1885,8 @@ export function App() {
             </div>
           </section>
         )}
+          </div>
+        </div>
       </div>
     </main>
   );
