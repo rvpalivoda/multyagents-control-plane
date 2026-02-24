@@ -72,3 +72,4 @@ Execution evidence:
 Commits:
 - `79be420` (`feat(task-036): add skill-pack api and ui management`)
 - `a2709ce` (`feat(task-036): include role skill packs in dispatch payload`)
+- `5c4324c` (`fix(task-036): make skills catalog lookup container-safe`)

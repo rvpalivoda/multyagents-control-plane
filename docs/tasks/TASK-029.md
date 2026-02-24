@@ -6,7 +6,7 @@
 - Priority: `P0`
 - Owner: `codex`
 - Created: `2026-02-23`
-- Updated: `2026-02-23`
+- Updated: `2026-02-24`
 
 ## Objective
 
@@ -91,10 +91,22 @@ Execution evidence:
 
 Post-integration verification:
 
-- `apps/api`: `./.venv/bin/pytest -q` -> `47 passed`
-- `apps/host-runner`: `./.venv/bin/pytest -q` -> `10 passed`
+- `apps/api`: `./.venv/bin/pytest -q` -> `66 passed`
+- `apps/host-runner`: `./.venv/bin/pytest -q` -> `12 passed`
 - `apps/telegram-bot`: `./.venv/bin/pytest -q` -> `12 passed`
 - `apps/ui`: `npm run build` successful
+
+Latest re-run evidence (2026-02-24):
+
+- Command:
+  - `HOST_RUNNER_PORT=48071 API_HOST_RUNNER_URL=http://host.docker.internal:48071 ./scripts/multyagents e2e`
+- Output:
+  - `[e2e] task success: 1`
+  - `[e2e] task success: 2`
+  - `[e2e] run success: 1`
+  - `[e2e] smoke passed`
+- Note:
+  - isolated runner port avoids collision with already-running local host-runner on default `48070`.
 
 Commits:
 - `28be9f3` (`feat(task-016): bootstrap monorepo baseline`)
