@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `review`
+- Status: `done`
 - Priority: `P1`
 - Owner: `codex`
 - Created: `2026-02-24`
@@ -61,4 +61,4 @@ Execution evidence:
 - `apps/ui`: `npm run build` -> success.
 
 Commits:
-- `TBD`
+- `d622e07`
