@@ -1123,9 +1123,14 @@ class InMemoryStore:
             raise ValidationError(f"unknown skills in pack '{name}': {', '.join(unknown_skills)}")
 
     def _load_skills_catalog(self) -> set[str]:
-        # Resolve from repository root so API can run from apps/api cwd.
-        docs_path = Path(__file__).resolve().parents[4] / "docs" / "SKILLS_CATALOG.md"
-        if not docs_path.exists():
+        source_file = Path(__file__).resolve()
+        docs_path: Path | None = None
+        for base in source_file.parents:
+            candidate = base / "docs" / "SKILLS_CATALOG.md"
+            if candidate.exists():
+                docs_path = candidate
+                break
+        if docs_path is None:
             return set()
 
         skills: set[str] = set()
