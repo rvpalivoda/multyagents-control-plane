@@ -53,4 +53,4 @@
 - Обновлен backlog/статусы задач EPIC-7.
 
 Commits:
-- `<final-sha>`
+- `88033d6`

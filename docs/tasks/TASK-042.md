@@ -56,4 +56,4 @@ Mapping поля `prompt` UI -> `title` API для обратной совмес
 
 Commits:
 - `84fab1f` — quick-create editor и базовая inline-валидация.
-- `<final-sha>` — интеграция с test harness и стабилизация тестов.
+- `88033d6` — интеграция с test harness и стабилизация тестов.
