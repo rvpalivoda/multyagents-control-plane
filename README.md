@@ -66,3 +66,9 @@ Host runner should run outside Docker.
 cd infra/compose
 ./scripts/run-e2e.sh
 ```
+
+## Workflow builder docs
+
+Operator workflow authoring guide (Quick create + Raw JSON):
+
+- `docs/WORKFLOW_CREATION_GUIDE.md`

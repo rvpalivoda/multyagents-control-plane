@@ -66,10 +66,10 @@
 
 
 ### EPIC-7 Workflow authoring UX
-- `TASK-042` (`P0`, `in_progress`): Workflow builder quick-create UX
-- `TASK-043` (`P0`, `todo`): Inline validation and cycle prevention in workflow builder
-- `TASK-044` (`P1`, `todo`): Add UI test harness and critical workflow builder tests
-- `TASK-045` (`P1`, `todo`): Update operator docs for workflow creation
+- `TASK-042` (`P0`, `done`): Workflow builder quick-create UX
+- `TASK-043` (`P0`, `done`): Inline validation and cycle prevention in workflow builder
+- `TASK-044` (`P1`, `done`): Add UI test harness and critical workflow builder tests
+- `TASK-045` (`P1`, `done`): Update operator docs for workflow creation
 
 ## Operating rule
 

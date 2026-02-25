@@ -21,7 +21,7 @@ import {
   workflowDraftsToSteps,
   workflowStepsToDrafts
 } from "./components/workflowEditorUtils";
-import type { WorkflowStepDraft } from "./components/workflowEditorUtils";
+import type { WorkflowStepDraft, WorkflowStepDraftFieldErrors } from "./components/workflowEditorUtils";
 import type {
   ApprovalRead,
   DispatchResult,
@@ -103,6 +103,47 @@ type WorkflowEditorMode = "quick" | "json";
 
 function stepsToJson(steps: unknown[]): string {
   return JSON.stringify(steps, null, 2);
+}
+
+function describeWorkflowDraft(draft: WorkflowStepDraft, index: number): string {
+  const stepId = draft.step_id.trim();
+  if (stepId.length === 0) {
+    return `Step ${index + 1}`;
+  }
+  return `Step ${index + 1} (${stepId})`;
+}
+
+function collectStepErrorMessages(stepErrors: Record<string, string | undefined>): string[] {
+  return Object.values(stepErrors).filter((message): message is string => typeof message === "string" && message.length > 0);
+}
+
+function collectWorkflowValidationSummary(
+  drafts: WorkflowStepDraft[],
+  formErrors: string[],
+  stepErrorsByClientId: Record<string, WorkflowStepDraftFieldErrors>
+): string[] {
+  const messages = [...formErrors];
+  const fieldLabels: Record<string, string> = {
+    step_id: "step_id",
+    role_id: "role",
+    prompt: "prompt",
+    depends_on: "depends_on"
+  };
+
+  drafts.forEach((draft, index) => {
+    const stepErrors = stepErrorsByClientId[draft.client_id];
+    if (!stepErrors) {
+      return;
+    }
+    Object.entries(stepErrors).forEach(([field, message]) => {
+      if (!message) {
+        return;
+      }
+      messages.push(`${describeWorkflowDraft(draft, index)} [${fieldLabels[field] ?? field}]: ${message}`);
+    });
+  });
+
+  return messages;
 }
 
 const DEFAULT_WORKFLOW_STEPS: WorkflowStep[] = [
@@ -337,12 +378,43 @@ export function App() {
     () => parseWorkflowStepsJson(workflowStepsJson),
     [workflowStepsJson]
   );
+  const workflowJsonValidationState = useMemo(() => {
+    if (workflowStepsJsonParse.error || !workflowStepsJsonParse.steps) {
+      return {
+        hasErrors: true,
+        summaryMessages: workflowStepsJsonParse.error ? [workflowStepsJsonParse.error] : []
+      };
+    }
+
+    const drafts = workflowStepsToDrafts(workflowStepsJsonParse.steps);
+    const validation = validateWorkflowStepDrafts(drafts);
+
+    return {
+      hasErrors: validation.hasErrors,
+      summaryMessages: collectWorkflowValidationSummary(
+        drafts,
+        validation.formErrors,
+        validation.stepErrorsByClientId
+      )
+    };
+  }, [workflowStepsJsonParse]);
   const workflowQuickValidation = useMemo(
     () => validateWorkflowStepDrafts(workflowStepDrafts),
     [workflowStepDrafts]
   );
+  const workflowQuickValidationSummary = useMemo(
+    () =>
+      collectWorkflowValidationSummary(
+        workflowStepDrafts,
+        workflowQuickValidation.formErrors,
+        workflowQuickValidation.stepErrorsByClientId
+      ),
+    [workflowQuickValidation, workflowStepDrafts]
+  );
+  const activeWorkflowValidationSummary =
+    workflowEditorMode === "quick" ? workflowQuickValidationSummary : workflowJsonValidationState.summaryMessages;
   const canSubmitWorkflow =
-    workflowEditorMode === "quick" ? !workflowQuickValidation.hasErrors : workflowStepsJsonParse.error === null;
+    workflowEditorMode === "quick" ? !workflowQuickValidation.hasErrors : !workflowJsonValidationState.hasErrors;
   const defaultWorkflowRoleId = roles.length > 0 ? roles[0].id : null;
 
   const canCreateTask = selectedRole !== null;
@@ -1428,22 +1500,29 @@ export function App() {
                     <p className="text-xs text-slate-500">
                       Quick create edits `id`, `role`, `prompt`, and `depends_on`; prompt maps to API field `title`.
                     </p>
-                    {workflowQuickValidation.formErrors.length > 0 && (
+                    {workflowQuickValidationSummary.length > 0 && (
                       <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-                        {workflowQuickValidation.formErrors.map((item) => (
-                          <p key={item}>{item}</p>
+                        <p className="font-semibold">Validation summary ({workflowQuickValidationSummary.length})</p>
+                        {workflowQuickValidationSummary.map((item, index) => (
+                          <p key={`${item}-${index}`}>{item}</p>
                         ))}
                       </div>
                     )}
                     {workflowStepDrafts.map((draft, index) => {
                       const stepErrors = workflowQuickValidation.stepErrorsByClientId[draft.client_id] ?? {};
+                      const cardErrorMessages = collectStepErrorMessages(stepErrors);
                       const dependencyOptions = workflowStepDrafts
                         .filter((candidate) => candidate.client_id !== draft.client_id)
                         .map((candidate) => candidate.step_id.trim())
                         .filter((candidate, candidateIndex, all) => candidate.length > 0 && all.indexOf(candidate) === candidateIndex);
 
                       return (
-                        <div key={draft.client_id} className="rounded-lg border border-slate-200 bg-white p-3">
+                        <div
+                          key={draft.client_id}
+                          className={`rounded-lg border bg-white p-3 ${
+                            cardErrorMessages.length > 0 ? "border-rose-300" : "border-slate-200"
+                          }`}
+                        >
                           <div className="flex items-center justify-between gap-2">
                             <p className="text-sm font-semibold text-slate-800">Step {index + 1}</p>
                             <button
@@ -1458,6 +1537,13 @@ export function App() {
                               Remove
                             </button>
                           </div>
+                          {cardErrorMessages.length > 0 && (
+                            <div className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-2 py-2 text-xs text-rose-700">
+                              {cardErrorMessages.map((message, errorIndex) => (
+                                <p key={`${draft.client_id}-card-error-${errorIndex}`}>{message}</p>
+                              ))}
+                            </div>
+                          )}
 
                           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                             <label>
@@ -1545,18 +1631,28 @@ export function App() {
                     </button>
                   </div>
                 ) : (
-                  <label className="mt-3 block">
-                    <span className={labelClass}>Steps JSON</span>
-                    <textarea
-                      className={textareaClass}
-                      rows={10}
-                      value={workflowStepsJson}
-                      onChange={(e) => onWorkflowStepsJsonChange(e.target.value)}
-                    />
-                    {workflowStepsJsonParse.error && (
-                      <p className="mt-1 text-xs text-rose-700">{workflowStepsJsonParse.error}</p>
+                  <div className="mt-3 space-y-3">
+                    {activeWorkflowValidationSummary.length > 0 && (
+                      <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                        <p className="font-semibold">Validation summary ({activeWorkflowValidationSummary.length})</p>
+                        {activeWorkflowValidationSummary.map((item, index) => (
+                          <p key={`${item}-${index}`}>{item}</p>
+                        ))}
+                      </div>
                     )}
-                  </label>
+                    <label className="block">
+                      <span className={labelClass}>Steps JSON</span>
+                      <textarea
+                        className={textareaClass}
+                        rows={10}
+                        value={workflowStepsJson}
+                        onChange={(e) => onWorkflowStepsJsonChange(e.target.value)}
+                      />
+                      {workflowStepsJsonParse.error && (
+                        <p className="mt-1 text-xs text-rose-700">{workflowStepsJsonParse.error}</p>
+                      )}
+                    </label>
+                  </div>
                 )}
               </div>
             </form>

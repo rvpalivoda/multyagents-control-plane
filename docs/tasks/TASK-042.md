@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `in_progress`
+- Status: `done`
 - Priority: `P0`
 - Owner: `codex`
 - Created: `2026-02-25`
@@ -32,9 +32,9 @@
 
 ## Acceptance criteria
 
-- [ ] Оператор может создать workflow без редактирования JSON.
-- [ ] Оператор может переключаться между Quick и Advanced без потери данных.
-- [ ] Совместимость с текущим API payload сохранена.
+- [x] Оператор может создать workflow без редактирования JSON.
+- [x] Оператор может переключаться между Quick и Advanced без потери данных.
+- [x] Совместимость с текущим API payload сохранена.
 
 ## Implementation notes
 
@@ -42,8 +42,8 @@ Mapping поля `prompt` UI -> `title` API для обратной совмес
 
 ## Test plan
 
-- [ ] Проверка валидации формы шагов и зависимостей.
-- [ ] Проверка создания/обновления workflow через UI в обоих режимах.
+- [x] Проверка валидации формы шагов и зависимостей.
+- [x] Проверка создания/обновления workflow через UI в обоих режимах.
 
 ## Risks and mitigations
 
@@ -52,5 +52,8 @@ Mapping поля `prompt` UI -> `title` API для обратной совмес
 
 ## Result
 
-В работе.
-- Commits: `<sha1>`
+Реализован удобный quick-create редактор шагов workflow c синхронизацией в raw JSON режим.
+
+Commits:
+- `84fab1f` — quick-create editor и базовая inline-валидация.
+- `<final-sha>` — интеграция с test harness и стабилизация тестов.

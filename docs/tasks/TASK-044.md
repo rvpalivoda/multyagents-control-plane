@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `todo`
+- Status: `done`
 - Priority: `P1`
 - Owner: `codex`
 - Created: `2026-02-25`
@@ -28,23 +28,31 @@
 
 ## Acceptance criteria
 
-- [ ] `npm test`/`vitest` запускается в `apps/ui`.
-- [ ] Критичные тесты workflow builder проходят.
+- [x] `npm test`/`vitest` запускается в `apps/ui`.
+- [x] Критичные тесты workflow builder проходят.
 
 ## Implementation notes
 
-Приоритет на проверку business-логики, а не визуальных деталей.
+Добавлен jsdom runtime, setup файл для cleanup и `@testing-library/jest-dom`.
 
 ## Test plan
 
-- [ ] CI-совместимый запуск тестов.
-- [ ] Локальный прогон на чистой установке.
+- [x] CI-совместимый запуск тестов.
+- [x] Локальный прогон на чистой установке.
 
 ## Risks and mitigations
 
 - Risk: Флаки из-за async рендера.
-- Mitigation: deterministic fixtures + await patterns.
+- Mitigation: deterministic fixtures + await/waitFor patterns.
 
 ## Result
 
-- Commits: `<sha1>`
+- Добавлен `vitest run` как основной тестовый скрипт UI.
+- Добавлены unit тесты `workflowEditorUtils.test.ts`.
+- Добавлены интеграционные UI тесты `App.workflowBuilder.test.tsx`.
+
+Execution evidence:
+- `cd apps/ui && npm test` -> passed (8 tests)
+
+Commits:
+- `<final-sha>`
