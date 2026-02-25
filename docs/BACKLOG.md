@@ -77,12 +77,13 @@
 - `TASK-047` (`P0`, `done`): Parallel worktree session manager
 - `TASK-048` (`P0`, `done`): Shared handoff board for agent-to-agent context
 - `TASK-049` (`P1`, `in_progress`): Recovery playbooks and auto-retry strategy
-- `TASK-050` (`P1`, `todo`): Assistant-facing orchestration API (chat-friendly)
+- `TASK-050` (`P1`, `in_progress`): Assistant-facing orchestration API (chat-friendly)
 
 
 ### EPIC-9 Autonomous operator effectiveness
-- `TASK-051` (`P1`, `todo`): Run-cost and throughput dashboard
-- `TASK-052` (`P1`, `todo`): Auto-triage failed runs
+- `TASK-054` (`P0`, `in_progress`): Assistant control loop (plan->spawn->aggregate)
+- `TASK-051` (`P1`, `in_progress`): Run-cost and throughput dashboard
+- `TASK-052` (`P1`, `in_progress`): Auto-triage failed runs
 - `TASK-053` (`P2`, `todo`): Template recommendation engine
 
 ## Operating rule
