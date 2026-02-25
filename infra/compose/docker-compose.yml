@@ -71,6 +71,8 @@ services:
     build:
       context: ../../apps/telegram-bot
       dockerfile: Dockerfile
+    profiles:
+      - telegram
     environment:
       API_BASE_URL: ${API_BASE_URL:-http://api:8000}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}

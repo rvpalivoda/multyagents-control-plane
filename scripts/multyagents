@@ -247,6 +247,11 @@ cmd_e2e() {
   (cd "$COMPOSE_DIR" && ./scripts/run-e2e.sh)
 }
 
+cmd_readiness() {
+  require_command python3
+  (cd "$ROOT_DIR" && ./scripts/task-061-readiness.sh)
+}
+
 cmd_desktop() {
   require_command node
   require_command npm
@@ -287,6 +292,7 @@ Commands:
   status   Show process/container status and health checks
   logs     Show recent host-runner and docker logs
   e2e      Run end-to-end smoke scenario
+  readiness Run TASK-061 local readiness scenarios and evidence capture
   desktop  Launch Electron desktop control panel
   help     Show this help
 
@@ -305,6 +311,7 @@ main() {
     status) cmd_status ;;
     logs) cmd_logs ;;
     e2e) cmd_e2e ;;
+    readiness) cmd_readiness ;;
     desktop) cmd_desktop ;;
     help|-h|--help) cmd_help ;;
     *)

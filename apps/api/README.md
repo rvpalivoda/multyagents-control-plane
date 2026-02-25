@@ -128,3 +128,8 @@ Runner status synchronization:
 CORS:
 - `API_CORS_ALLOW_ORIGIN_REGEX` default: `^https?://(localhost|127\.0\.0\.1)(:\d+)?$`
 - `API_CORS_ALLOW_ORIGINS` default: `null` (comma-separated fixed origins)
+
+Local readiness scenario harness (TASK-061):
+- script: `scripts/task_061_local_readiness.py`
+- tests: `tests/test_local_readiness_scenarios.py`
+- repository wrapper: `../scripts/task-061-readiness.sh`

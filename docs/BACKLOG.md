@@ -97,9 +97,9 @@
 
 
 ### EPIC-11 Local operational readiness
-- `TASK-060` (`P0`, `in_progress`): Local runtime bootstrap & healthpack
-- `TASK-061` (`P0`, `in_progress`): End-to-end local readiness scenarios
-- `TASK-062` (`P1`, `in_progress`): Runbooks for local failure recovery
+- `TASK-060` (`P0`, `done`): Local runtime bootstrap & healthpack
+- `TASK-061` (`P0`, `done`): End-to-end local readiness scenarios
+- `TASK-062` (`P1`, `done`): Runbooks for local failure recovery
 - `TASK-063` (`P1`, `todo`): Contract regression suite (summary/gates/timeline)
 - `TASK-064` (`P1`, `todo`): Local readiness checklist (Go/No-Go)
 

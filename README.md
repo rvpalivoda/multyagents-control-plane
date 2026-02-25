@@ -12,6 +12,14 @@ Local multi-agent control plane project.
 - `docs` - spec, architecture, plan, tasks, ADRs
 - `skills` - project-specific Codex skills
 
+## Documentation
+
+- Main docs index: `docs/README.md`
+- Local failure recovery runbooks:
+  - `docs/runbooks/RUNNER_OFFLINE.md`
+  - `docs/runbooks/STUCK_QUEUED_RUNNING.md`
+  - `docs/runbooks/WORKTREE_CONFLICT_CLEANUP.md`
+
 ## Quick start
 
 ### One command launcher
