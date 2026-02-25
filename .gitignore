@@ -87,3 +87,8 @@ docs/evidence/task-073/*.json
 docs/evidence/task-073/*.md
 docs/evidence/task-073/*.log
 !docs/evidence/task-073/README.md
+
+docs/evidence/task-077/*.json
+docs/evidence/task-077/*.md
+docs/evidence/task-077/*.log
+!docs/evidence/task-077/README.md

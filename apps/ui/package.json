@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run --no-file-parallelism --pool=forks --poolOptions.forks.singleFork=true",
-    "test:smoke": "../../scripts/ui-test-smoke.sh"
+    "test:smoke": "../../scripts/ui-test-smoke.sh",
+    "test:e2e": "npx --yes @playwright/test@1.54.2 test",
+    "test:e2e:ci": "CI=1 npx --yes @playwright/test@1.54.2 test"
   },
   "dependencies": {
     "react": "^18.3.1",

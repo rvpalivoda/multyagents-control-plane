@@ -275,6 +275,145 @@ cmd_restart_persistence() {
   (cd "$ROOT_DIR" && ./scripts/task-073-restart-persistence.sh)
 }
 
+cmd_slo_smoke() {
+  require_command python3
+  (cd "$ROOT_DIR" && ./scripts/task-076-slo-smoke.sh)
+}
+
+gate_v2_run_stage() {
+  local idx="$1"
+  local total="$2"
+  local stage_id="$3"
+  local label="$4"
+  local cmd="$5"
+  local summary_file="$6"
+  local started="$SECONDS"
+  local status="FAIL"
+
+  echo "[gate-v2] ${idx}/${total} ${label}"
+  if ( eval "$cmd" ); then
+    status="PASS"
+  fi
+
+  local duration="$((SECONDS - started))"
+  printf '[gate-v2] %s -> %s (%ss)\n' "$stage_id" "$status" "$duration"
+  printf '%s|%s|%s|%s|%s\n' "$stage_id" "$label" "$status" "$duration" "$cmd" >>"$summary_file"
+
+  [[ "$status" == "PASS" ]]
+}
+
+gate_v2_write_evidence() {
+  local summary_file="$1"
+  local evidence_dir="$2"
+  local timestamp="$3"
+  local json_evidence="$evidence_dir/task-077-gate-v2-$timestamp.json"
+  local md_evidence="$evidence_dir/task-077-gate-v2-$timestamp.md"
+
+  python3 - "$summary_file" "$json_evidence" "$md_evidence" <<'PY'
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+import sys
+
+summary_path = Path(sys.argv[1])
+json_path = Path(sys.argv[2])
+md_path = Path(sys.argv[3])
+
+stages: list[dict[str, object]] = []
+for raw_line in summary_path.read_text(encoding="utf-8").splitlines():
+    line = raw_line.strip()
+    if not line:
+        continue
+    stage_id, label, status, duration_seconds, command = line.split("|", 4)
+    stages.append(
+        {
+            "stage_id": stage_id,
+            "label": label,
+            "status": status,
+            "duration_seconds": int(duration_seconds),
+            "command": command,
+        }
+    )
+
+failed = sum(1 for stage in stages if stage["status"] != "PASS")
+passed = len(stages) - failed
+overall_status = "pass" if failed == 0 else "fail"
+
+payload = {
+    "task_id": "TASK-077",
+    "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    "summary": {
+        "total": len(stages),
+        "passed": passed,
+        "failed": failed,
+        "overall_status": overall_status,
+    },
+    "stages": stages,
+}
+
+json_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+md_lines = [
+    "# TASK-077 gate-v2 evidence",
+    "",
+    f"- Generated at: `{payload['generated_at']}`",
+    f"- Overall: `{overall_status}`",
+    f"- Passed/Total: `{passed}/{len(stages)}`",
+    "",
+    "| Stage | Label | Status | Duration (s) |",
+    "|---|---|---|---:|",
+]
+for stage in stages:
+    md_lines.append(
+        f"| `{stage['stage_id']}` | {stage['label']} | `{stage['status']}` | {stage['duration_seconds']} |"
+    )
+
+md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+PY
+
+  cp "$json_evidence" "$evidence_dir/latest.json"
+  cp "$md_evidence" "$evidence_dir/latest.md"
+
+  echo "[gate-v2] evidence artifacts:"
+  echo "  - $json_evidence"
+  echo "  - $md_evidence"
+}
+
+gate_v2_print_summary() {
+  local summary_file="$1"
+  local total="$2"
+  local passed=0
+  local failed=0
+  local stage_id=""
+  local label=""
+  local status=""
+  local duration=""
+  local cmd=""
+
+  echo
+  echo "[gate-v2] Stage summary"
+  printf '  %-4s %-34s %-6s %s\n' "ID" "Stage" "Result" "Duration"
+  while IFS='|' read -r stage_id label status duration cmd; do
+    [[ -z "${stage_id:-}" ]] && continue
+    if [[ "$status" == "PASS" ]]; then
+      passed=$((passed + 1))
+    else
+      failed=$((failed + 1))
+    fi
+    printf '  %-4s %-34s %-6s %ss\n' "$stage_id" "$label" "$status" "$duration"
+  done <"$summary_file"
+
+  echo
+  if [[ "$failed" -eq 0 ]]; then
+    echo "[gate-v2] FINAL VERDICT: PASS (${passed}/${total} stages passed)"
+    return 0
+  fi
+  echo "[gate-v2] FINAL VERDICT: FAIL (${failed}/${total} stages failed)" >&2
+  return 1
+}
+
 cmd_gate() {
   require_command python3
   require_command docker
@@ -304,6 +443,68 @@ cmd_gate() {
     return 0
   fi
   echo "[gate] ❌ FAIL: one or more reliability checks failed" >&2
+  return 1
+}
+
+cmd_gate_v2() {
+  require_command python3
+  local failed=0
+  local total=10
+  local summary_file=""
+  local evidence_dir="${TASK_077_EVIDENCE_DIR:-$ROOT_DIR/docs/evidence/task-077}"
+  local timestamp
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+
+  mkdir -p "$evidence_dir"
+  summary_file="$(mktemp)"
+  trap "rm -f '$summary_file'" RETURN
+
+  gate_v2_run_stage 1 "$total" "S01" "API regression" \
+    "cd \"$ROOT_DIR/apps/api\" && .venv/bin/pytest -q" \
+    "$summary_file" || failed=1
+
+  gate_v2_run_stage 2 "$total" "S02" "Telegram bot regression" \
+    "cd \"$ROOT_DIR/apps/telegram-bot\" && .venv/bin/pytest -q" \
+    "$summary_file" || failed=1
+
+  gate_v2_run_stage 3 "$total" "S03" "UI build" \
+    "cd \"$ROOT_DIR/apps/ui\" && npm run build" \
+    "$summary_file" || failed=1
+
+  gate_v2_run_stage 4 "$total" "S04" "UI smoke" \
+    "cd \"$ROOT_DIR\" && ./scripts/ui-test-smoke.sh" \
+    "$summary_file" || failed=1
+
+  gate_v2_run_stage 5 "$total" "S05" "Local readiness" \
+    "cd \"$ROOT_DIR\" && ./scripts/task-061-readiness.sh" \
+    "$summary_file" || failed=1
+
+  gate_v2_run_stage 6 "$total" "S06" "Compose E2E smoke" \
+    "cd \"$ROOT_DIR/infra/compose\" && ./scripts/run-e2e.sh" \
+    "$summary_file" || failed=1
+
+  gate_v2_run_stage 7 "$total" "S07" "Chaos failure drills" \
+    "cd \"$ROOT_DIR/infra/compose\" && E2E_SCENARIO_SCRIPT=chaos_e2e_failure_drills.py ./scripts/run-e2e.sh" \
+    "$summary_file" || failed=1
+
+  gate_v2_run_stage 8 "$total" "S08" "Race stress suite" \
+    "cd \"$ROOT_DIR\" && ./scripts/task-072-race-stress.sh" \
+    "$summary_file" || failed=1
+
+  gate_v2_run_stage 9 "$total" "S09" "Restart persistence suite" \
+    "cd \"$ROOT_DIR\" && ./scripts/task-073-restart-persistence.sh" \
+    "$summary_file" || failed=1
+
+  gate_v2_run_stage 10 "$total" "S10" "Security adversarial suite" \
+    "cd \"$ROOT_DIR/apps/api\" && .venv/bin/pytest -q tests/test_api_security_adversarial.py" \
+    "$summary_file" || failed=1
+
+  gate_v2_write_evidence "$summary_file" "$evidence_dir" "$timestamp"
+  gate_v2_print_summary "$summary_file" "$total" || failed=1
+
+  if [[ "$failed" -eq 0 ]]; then
+    return 0
+  fi
   return 1
 }
 
@@ -352,7 +553,9 @@ Commands:
   chaos    Run TASK-071 chaos failure drills scenario
   readiness Run TASK-061 local readiness scenarios and evidence capture
   restart-persistence Run TASK-073 restart persistence invariant suite (alias: persistence-restart)
+  slo-smoke Run TASK-076 SLO load/soak benchmark suite (alias: task-076)
   gate     Run full reliability gate (api+bot+ui+smoke+readiness+e2e)
+  gate-v2  Run release gate v2 with hard-fail stages and TASK-077 evidence
   desktop  Launch Electron desktop control panel
   help     Show this help
 
@@ -376,7 +579,9 @@ main() {
     chaos) cmd_chaos ;;
     readiness) cmd_readiness ;;
     restart-persistence|persistence-restart) cmd_restart_persistence ;;
+    slo-smoke|task-076) cmd_slo_smoke ;;
     gate) cmd_gate ;;
+    gate-v2) cmd_gate_v2 ;;
     desktop) cmd_desktop ;;
     help|-h|--help) cmd_help ;;
     *)

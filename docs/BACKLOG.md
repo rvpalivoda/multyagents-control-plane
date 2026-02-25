@@ -122,9 +122,9 @@
 - `TASK-072` (`P0`, `done`): Concurrency and race-condition stress suite
 - `TASK-073` (`P1`, `done`): Restart persistence invariant tests
 - `TASK-074` (`P1`, `done`): Security and policy adversarial tests
-- `TASK-075` (`P1`, `todo`): Playwright UI E2E critical journeys
-- `TASK-076` (`P2`, `todo`): SLO performance and soak tests
-- `TASK-077` (`P1`, `todo`): Release gate v2 (hard fail policies)
+- `TASK-075` (`P1`, `in_progress`): Playwright UI E2E critical journeys
+- `TASK-076` (`P2`, `done`): SLO performance and soak tests
+- `TASK-077` (`P1`, `done`): Release gate v2 (hard fail policies)
 
 ## Operating rule
 
