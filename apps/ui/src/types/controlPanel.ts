@@ -1,4 +1,4 @@
-import type { ApprovalStatus } from "../../../packages/contracts/ts/context7";
+import type { ApprovalStatus } from "../../../../packages/contracts/ts/context7";
 
 export type DispatchResult = {
   resolved_context7_enabled: boolean;

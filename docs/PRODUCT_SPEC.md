@@ -36,6 +36,7 @@ The platform coordinates many autonomous agents for coding and non-coding tasks.
   - execution mode
   - retry/timeout policy
   - approval gates
+  - quality gate policy (`required_checks[]`, `severity`, `blocker/warn`) with task/run summaries
 
 4. Agent execution modes
 - `no-workspace`

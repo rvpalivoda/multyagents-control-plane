@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import type { EventRead, TaskRead, WorkflowRunRead } from "../../../packages/contracts/ts/context7";
+import type { EventRead, TaskRead, WorkflowRunRead } from "../../../../packages/contracts/ts/context7";
 import type { WorkflowRunDispatchReadyResponse } from "../types/controlPanel";
 
 type RunsCenterSectionProps = {
@@ -112,6 +112,23 @@ function formatPercentage(value: number | null | undefined): string {
   return `${value.toFixed(1)}%`;
 }
 
+function formatQualityGateSummaryBadge(
+  summary:
+    | {
+        status: string;
+        blocker_failures: number;
+        warning_failures: number;
+        pending_checks: number;
+      }
+    | null
+    | undefined
+): string {
+  if (!summary) {
+    return "-";
+  }
+  return `${summary.status} (B:${summary.blocker_failures} W:${summary.warning_failures} P:${summary.pending_checks})`;
+}
+
 export function RunsCenterSection(props: RunsCenterSectionProps) {
   const {
     sectionClass,
@@ -152,6 +169,7 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
   const selectedRunFailureCategories = selectedRun?.failure_categories ?? [];
   const selectedRunFailureHints = selectedRun?.failure_triage_hints ?? [];
   const selectedRunSuggestedActions = selectedRun?.suggested_next_actions ?? [];
+  const selectedRunQualitySummary = selectedRun?.quality_gate_summary;
 
   return (
     <section className={sectionClass}>
@@ -211,6 +229,7 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
                   <th className={thClass}>duration</th>
                   <th className={thClass}>success rate</th>
                   <th className={thClass}>retries</th>
+                  <th className={thClass}>gates</th>
                   <th className={thClass}>template</th>
                   <th className={thClass}>project</th>
                   <th className={thClass}>updated</th>
@@ -230,6 +249,7 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
                       <td className={tdClass}>{formatDurationMs(run.duration_ms)}</td>
                       <td className={tdClass}>{formatPercentage(run.success_rate)}</td>
                       <td className={tdClass}>{run.retries_total}</td>
+                      <td className={tdClass}>{formatQualityGateSummaryBadge(run.quality_gate_summary)}</td>
                       <td className={tdClass}>
                         {run.workflow_template_id === null
                           ? "-"
@@ -260,6 +280,10 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
                 <p>Duration: {formatDurationMs(selectedRun.duration_ms)}</p>
                 <p>Success rate: {formatPercentage(selectedRun.success_rate)}</p>
                 <p>Retries: {selectedRun.retries_total}</p>
+                <p>Quality gates: {formatQualityGateSummaryBadge(selectedRunQualitySummary)}</p>
+                {selectedRunQualitySummary && (
+                  <p className="mt-1 text-xs text-slate-600">{selectedRunQualitySummary.summary_text}</p>
+                )}
               </div>
             ) : (
               <p className="mt-2 text-sm text-slate-500">Select a run from the left table.</p>
@@ -293,6 +317,12 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
                   {selectedRunTasks.map((runTask) => (
                     <li key={runTask.id}>
                       #{runTask.id} - {runTask.status} - {runTask.title}
+                      <div className="mt-1 text-xs text-slate-600">
+                        Quality gates: {formatQualityGateSummaryBadge(runTask.quality_gate_summary)}
+                      </div>
+                      {runTask.quality_gate_summary && (
+                        <div className="mt-1 text-xs text-slate-600">{runTask.quality_gate_summary.summary_text}</div>
+                      )}
                       {isFailedTaskStatus(runTask.status) && (
                         <div className="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800">
                           <p>Category: {runTask.failure_category ?? "unknown"}</p>

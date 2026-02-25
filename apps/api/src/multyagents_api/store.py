@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 
@@ -28,6 +29,14 @@ from multyagents_api.schemas import (
     EventCreate,
     EventRead,
     ExecutionMode,
+    QualityGateCheckId,
+    QualityGateCheckResult,
+    QualityGateCheckStatus,
+    QualityGatePolicy,
+    QualityGateRunSummary,
+    QualityGateSeverity,
+    QualityGateSummary,
+    QualityGateSummaryStatus,
     ProjectCreate,
     ProjectRead,
     RunnerLifecycleStatus,
@@ -105,6 +114,7 @@ class _TaskRecord:
     project_id: int | None
     lock_paths: list[str]
     sandbox: dict[str, Any] | None = None
+    quality_gate_policy: dict[str, Any] = field(default_factory=dict)
     status: str = TaskStatus.CREATED.value
     runner_message: str | None = None
     started_at: str | None = None
@@ -419,6 +429,7 @@ class InMemoryStore:
                         project_id=override.project_id,
                         lock_paths=override.lock_paths,
                         sandbox=override.sandbox,
+                        quality_gate_policy=step.quality_gate_policy,
                     )
                 )
                 step_to_task_id[step.step_id] = created.id
@@ -826,6 +837,10 @@ class InMemoryStore:
                     consumed_artifact_ids=(list(audit.consumed_artifact_ids) if audit is not None else []),
                     produced_artifact_ids=(list(audit.produced_artifact_ids) if audit is not None else []),
                     handoff_summary=handoff.summary if handoff is not None else None,
+                    quality_gate_summary=self._evaluate_task_quality_gates(
+                        task,
+                        policy=self._task_quality_gate_policy(task),
+                    ),
                 )
             )
 
@@ -1090,6 +1105,7 @@ class InMemoryStore:
             project_id=task.project_id,
             lock_paths=normalized_lock_paths,
             sandbox=task.sandbox.model_dump() if task.sandbox is not None else None,
+            quality_gate_policy=task.quality_gate_policy.model_dump(),
             status=TaskStatus.CREATED.value,
         )
         self._tasks[task_id] = record
@@ -1647,6 +1663,7 @@ class InMemoryStore:
                     title=step.title,
                     depends_on=step.depends_on,
                     required_artifacts=step.required_artifacts,
+                    quality_gate_policy=step.quality_gate_policy,
                     task_config=resolved_config,
                 )
             )
@@ -2828,6 +2845,8 @@ class InMemoryStore:
 
     def _to_task_read(self, record: _TaskRecord) -> TaskRead:
         sandbox = SandboxConfig(**record.sandbox) if record.sandbox is not None else None
+        quality_gate_policy = self._task_quality_gate_policy(record)
+        quality_gate_summary = self._evaluate_task_quality_gates(record, policy=quality_gate_policy)
         failure_category, failure_triage_hints, suggested_next_actions = self._triage_for_task_record(record)
         return TaskRead(
             id=record.id,
@@ -2847,6 +2866,179 @@ class InMemoryStore:
             failure_category=failure_category,
             failure_triage_hints=failure_triage_hints,
             suggested_next_actions=suggested_next_actions,
+            quality_gate_policy=quality_gate_policy,
+            quality_gate_summary=quality_gate_summary,
+        )
+
+    def _task_quality_gate_policy(self, record: _TaskRecord) -> QualityGatePolicy:
+        raw_policy = record.quality_gate_policy
+        if raw_policy:
+            try:
+                return QualityGatePolicy(**raw_policy)
+            except Exception:
+                pass
+        return QualityGatePolicy(
+            required_checks=[
+                {
+                    "check": QualityGateCheckId.TASK_STATUS.value,
+                    "required": True,
+                    "severity": QualityGateSeverity.BLOCKER.value,
+                }
+            ]
+        )
+
+    def _evaluate_task_quality_gates(self, record: _TaskRecord, *, policy: QualityGatePolicy) -> QualityGateSummary:
+        results: list[QualityGateCheckResult] = []
+        for check_policy in policy.required_checks:
+            check_name = check_policy.check.value if isinstance(check_policy.check, Enum) else str(check_policy.check)
+            severity = check_policy.severity
+            required = check_policy.required
+            status = QualityGateCheckStatus.FAIL
+            message = "unknown quality gate check"
+            details: dict[str, Any] = {"check": check_name}
+
+            if check_name == QualityGateCheckId.TASK_STATUS.value:
+                details["task_status"] = record.status
+                if record.status == TaskStatus.SUCCESS.value:
+                    status = QualityGateCheckStatus.PASS
+                    message = "task completed successfully"
+                elif self._is_terminal_task_status(record.status):
+                    status = QualityGateCheckStatus.FAIL
+                    message = f"task completed with terminal status '{record.status}'"
+                else:
+                    status = QualityGateCheckStatus.PENDING
+                    message = "task is still in progress"
+            elif check_name == QualityGateCheckId.APPROVAL_STATUS.value:
+                approval_status = self._approval_status_for_task(record.id)
+                details["task_requires_approval"] = record.requires_approval
+                details["approval_status"] = approval_status.value if approval_status is not None else None
+                if not record.requires_approval:
+                    status = QualityGateCheckStatus.SKIPPED
+                    message = "approval gate is not enabled for this task"
+                elif approval_status == ApprovalStatus.APPROVED:
+                    status = QualityGateCheckStatus.PASS
+                    message = "approval granted"
+                elif approval_status == ApprovalStatus.REJECTED:
+                    status = QualityGateCheckStatus.FAIL
+                    message = "approval rejected"
+                else:
+                    status = QualityGateCheckStatus.PENDING
+                    message = "approval is pending"
+            elif check_name == QualityGateCheckId.HANDOFF_PRESENT.value:
+                handoff = self._handoffs.get(record.id)
+                has_handoff = handoff is not None and handoff.summary.strip() != ""
+                details["has_handoff"] = has_handoff
+                if has_handoff:
+                    status = QualityGateCheckStatus.PASS
+                    message = "handoff payload is published"
+                elif self._is_terminal_task_status(record.status):
+                    status = QualityGateCheckStatus.FAIL
+                    message = "terminal task is missing handoff payload"
+                else:
+                    status = QualityGateCheckStatus.PENDING
+                    message = "handoff payload has not been published yet"
+            elif check_name == QualityGateCheckId.REQUIRED_ARTIFACTS_PRESENT.value:
+                handoff = self._handoffs.get(record.id)
+                if handoff is None:
+                    details["required_artifact_ids"] = []
+                    if self._is_terminal_task_status(record.status):
+                        status = QualityGateCheckStatus.FAIL
+                        message = "terminal task has no handoff artifact references"
+                    else:
+                        status = QualityGateCheckStatus.PENDING
+                        message = "handoff artifacts are not available yet"
+                else:
+                    required_artifact_ids = [
+                        artifact.artifact_id for artifact in handoff.artifacts if artifact.is_required
+                    ]
+                    details["required_artifact_ids"] = required_artifact_ids
+                    if not required_artifact_ids:
+                        status = QualityGateCheckStatus.PASS
+                        message = "no required handoff artifacts declared"
+                    else:
+                        artifacts_by_id = {artifact.id: artifact for artifact in self._artifacts}
+                        missing_artifact_ids: list[int] = []
+                        invalid_producer_ids: list[int] = []
+                        invalid_run_ids: list[int] = []
+                        for artifact_id in required_artifact_ids:
+                            artifact = artifacts_by_id.get(artifact_id)
+                            if artifact is None:
+                                missing_artifact_ids.append(artifact_id)
+                                continue
+                            if artifact.producer_task_id != record.id:
+                                invalid_producer_ids.append(artifact_id)
+                                continue
+                            if handoff.run_id is not None and artifact.run_id != handoff.run_id:
+                                invalid_run_ids.append(artifact_id)
+
+                        details["missing_artifact_ids"] = missing_artifact_ids
+                        details["invalid_producer_ids"] = invalid_producer_ids
+                        details["invalid_run_ids"] = invalid_run_ids
+                        if missing_artifact_ids or invalid_producer_ids or invalid_run_ids:
+                            status = QualityGateCheckStatus.FAIL
+                            message = "required handoff artifacts are missing or invalid"
+                        else:
+                            status = QualityGateCheckStatus.PASS
+                            message = "required handoff artifacts are available"
+            else:
+                status = QualityGateCheckStatus.FAIL
+                message = f"unknown quality gate check '{check_name}'"
+
+            blocker = (
+                status == QualityGateCheckStatus.FAIL
+                and required
+                and severity == QualityGateSeverity.BLOCKER
+            )
+            results.append(
+                QualityGateCheckResult(
+                    check=check_name,
+                    status=status,
+                    severity=severity,
+                    required=required,
+                    blocker=blocker,
+                    message=message,
+                    details=details,
+                )
+            )
+
+        if not results:
+            return QualityGateSummary()
+
+        passed_checks = sum(1 for item in results if item.status == QualityGateCheckStatus.PASS)
+        failed_checks = sum(1 for item in results if item.status == QualityGateCheckStatus.FAIL)
+        pending_checks = sum(1 for item in results if item.status == QualityGateCheckStatus.PENDING)
+        skipped_checks = sum(1 for item in results if item.status == QualityGateCheckStatus.SKIPPED)
+        blocker_failures = sum(1 for item in results if item.blocker)
+        warning_failures = sum(
+            1
+            for item in results
+            if item.status == QualityGateCheckStatus.FAIL and not item.blocker
+        )
+
+        if blocker_failures > 0:
+            summary_status = QualityGateSummaryStatus.FAIL
+            summary_text = f"{blocker_failures} blocker gate(s) failed."
+        elif pending_checks > 0:
+            summary_status = QualityGateSummaryStatus.PENDING
+            summary_text = f"{passed_checks}/{len(results)} checks passed, {pending_checks} pending."
+        elif warning_failures > 0:
+            summary_status = QualityGateSummaryStatus.PASS
+            summary_text = f"Passed with {warning_failures} warning gate failure(s)."
+        else:
+            summary_status = QualityGateSummaryStatus.PASS
+            summary_text = "All quality gates passed."
+
+        return QualityGateSummary(
+            status=summary_status,
+            summary_text=summary_text,
+            total_checks=len(results),
+            passed_checks=passed_checks,
+            failed_checks=failed_checks,
+            pending_checks=pending_checks,
+            skipped_checks=skipped_checks,
+            blocker_failures=blocker_failures,
+            warning_failures=warning_failures,
+            checks=results,
         )
 
     @staticmethod
@@ -2980,6 +3172,7 @@ class InMemoryStore:
         retry_summary, retry_categories, retry_hints = self._build_workflow_retry_surface(record)
         triage_categories, triage_hints, suggested_next_actions = self._triage_for_run_record(record)
         duration_ms, success_rate, retries_total, per_role = self._build_workflow_run_metrics(record)
+        quality_gate_summary = self._build_workflow_run_quality_gate_summary(record)
 
         failure_categories = list(retry_categories)
         for category in triage_categories:
@@ -3005,6 +3198,94 @@ class InMemoryStore:
             success_rate=success_rate,
             retries_total=retries_total,
             per_role=per_role,
+            quality_gate_summary=quality_gate_summary,
+        )
+
+    def _build_workflow_run_quality_gate_summary(self, record: _WorkflowRunRecord) -> QualityGateRunSummary:
+        if not record.task_ids:
+            return QualityGateRunSummary()
+
+        total_tasks = 0
+        passing_tasks = 0
+        failing_tasks = 0
+        pending_tasks = 0
+        not_configured_tasks = 0
+        total_checks = 0
+        passed_checks = 0
+        failed_checks = 0
+        pending_checks = 0
+        skipped_checks = 0
+        blocker_failures = 0
+        warning_failures = 0
+
+        for task_id in record.task_ids:
+            task_record = self._tasks.get(task_id)
+            if task_record is None:
+                continue
+            total_tasks += 1
+            task_summary = self._evaluate_task_quality_gates(
+                task_record,
+                policy=self._task_quality_gate_policy(task_record),
+            )
+
+            if task_summary.status == QualityGateSummaryStatus.PASS:
+                passing_tasks += 1
+            elif task_summary.status == QualityGateSummaryStatus.FAIL:
+                failing_tasks += 1
+            elif task_summary.status == QualityGateSummaryStatus.PENDING:
+                pending_tasks += 1
+            else:
+                not_configured_tasks += 1
+
+            total_checks += task_summary.total_checks
+            passed_checks += task_summary.passed_checks
+            failed_checks += task_summary.failed_checks
+            pending_checks += task_summary.pending_checks
+            skipped_checks += task_summary.skipped_checks
+            blocker_failures += task_summary.blocker_failures
+            warning_failures += task_summary.warning_failures
+
+        if total_tasks == 0:
+            return QualityGateRunSummary()
+        if blocker_failures > 0:
+            status = QualityGateSummaryStatus.FAIL
+            summary_text = (
+                f"{failing_tasks} task(s) have blocker gate failures "
+                f"({blocker_failures} blocker check failure(s))."
+            )
+        elif pending_checks > 0 or pending_tasks > 0:
+            status = QualityGateSummaryStatus.PENDING
+            summary_text = (
+                f"{passing_tasks}/{total_tasks} task(s) currently pass; "
+                f"{pending_tasks} task(s) still pending quality checks."
+            )
+        elif total_checks == 0:
+            status = QualityGateSummaryStatus.NOT_CONFIGURED
+            summary_text = "No quality gates configured for tasks in this run."
+        elif warning_failures > 0:
+            status = QualityGateSummaryStatus.PASS
+            summary_text = (
+                f"Run passed blocker gates with {warning_failures} warning check failure(s)."
+            )
+        else:
+            status = QualityGateSummaryStatus.PASS
+            summary_text = "Run quality gates passed."
+
+        return QualityGateRunSummary(
+            status=status,
+            summary_text=summary_text,
+            total_tasks=total_tasks,
+            passing_tasks=passing_tasks,
+            failing_tasks=failing_tasks,
+            pending_tasks=pending_tasks,
+            not_configured_tasks=not_configured_tasks,
+            total_checks=total_checks,
+            passed_checks=passed_checks,
+            failed_checks=failed_checks,
+            pending_checks=pending_checks,
+            skipped_checks=skipped_checks,
+            blocker_failures=blocker_failures,
+            warning_failures=warning_failures,
         )
 
     def _build_workflow_retry_surface(

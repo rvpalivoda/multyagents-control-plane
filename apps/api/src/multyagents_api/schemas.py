@@ -64,6 +64,107 @@ class WorkflowRunStatus(str, Enum):
     FAILED = "failed"
 
 
+class QualityGateSeverity(str, Enum):
+    BLOCKER = "blocker"
+    WARN = "warn"
+
+
+class QualityGateCheckId(str, Enum):
+    TASK_STATUS = "task-status"
+    APPROVAL_STATUS = "approval-status"
+    HANDOFF_PRESENT = "handoff-present"
+    REQUIRED_ARTIFACTS_PRESENT = "required-artifacts-present"
+
+
+class QualityGateCheckStatus(str, Enum):
+    PASS = "pass"
+    FAIL = "fail"
+    PENDING = "pending"
+    SKIPPED = "skipped"
+
+
+class QualityGateSummaryStatus(str, Enum):
+    PASS = "pass"
+    FAIL = "fail"
+    PENDING = "pending"
+    NOT_CONFIGURED = "not-configured"
+
+
+class QualityGateCheckPolicy(BaseModel):
+    check: QualityGateCheckId | str = QualityGateCheckId.TASK_STATUS
+    required: bool = True
+    severity: QualityGateSeverity = QualityGateSeverity.BLOCKER
+    config: dict[str, Any] = Field(default_factory=dict)
+    description: str | None = None
+
+    @model_validator(mode="after")
+    def normalize_fields(self) -> "QualityGateCheckPolicy":
+        if isinstance(self.check, str):
+            self.check = self.check.strip()
+            if not self.check:
+                raise ValueError("quality gate check must not be empty")
+        if self.description is not None:
+            trimmed = self.description.strip()
+            self.description = trimmed if trimmed else None
+        return self
+
+
+class QualityGatePolicy(BaseModel):
+    required_checks: list[QualityGateCheckPolicy] = Field(default_factory=list)
+
+
+class QualityGateCheckResult(BaseModel):
+    check: str
+    status: QualityGateCheckStatus
+    severity: QualityGateSeverity
+    required: bool = True
+    blocker: bool = False
+    message: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class QualityGateSummary(BaseModel):
+    status: QualityGateSummaryStatus = QualityGateSummaryStatus.NOT_CONFIGURED
+    summary_text: str = "No quality gates configured."
+    total_checks: int = 0
+    passed_checks: int = 0
+    failed_checks: int = 0
+    pending_checks: int = 0
+    skipped_checks: int = 0
+    blocker_failures: int = 0
+    warning_failures: int = 0
+    checks: list[QualityGateCheckResult] = Field(default_factory=list)
+
+
+class QualityGateRunSummary(BaseModel):
+    status: QualityGateSummaryStatus = QualityGateSummaryStatus.NOT_CONFIGURED
+    summary_text: str = "No quality gates evaluated for this run yet."
+    total_tasks: int = 0
+    passing_tasks: int = 0
+    failing_tasks: int = 0
+    pending_tasks: int = 0
+    not_configured_tasks: int = 0
+    total_checks: int = 0
+    passed_checks: int = 0
+    failed_checks: int = 0
+    pending_checks: int = 0
+    skipped_checks: int = 0
+    blocker_failures: int = 0
+    warning_failures: int = 0
+
+
+def _default_task_quality_gate_policy() -> QualityGatePolicy:
+    return QualityGatePolicy(
+        required_checks=[
+            QualityGateCheckPolicy(
+                check=QualityGateCheckId.TASK_STATUS,
+                required=True,
+                severity=QualityGateSeverity.BLOCKER,
+            )
+        ]
+    )
+
+
 class RoleCreate(BaseModel):
     name: str = Field(min_length=1)
     context7_enabled: bool = False
@@ -135,6 +236,7 @@ class TaskCreate(BaseModel):
     project_id: int | None = None
     lock_paths: list[str] = Field(default_factory=list)
     sandbox: SandboxConfig | None = None
+    quality_gate_policy: QualityGatePolicy = Field(default_factory=_default_task_quality_gate_policy)
 
     @model_validator(mode="after")
     def validate_workspace_fields(self) -> "TaskCreate":
@@ -183,6 +285,8 @@ class TaskRead(BaseModel):
     failure_category: str | None = None
     failure_triage_hints: list[str] = Field(default_factory=list)
     suggested_next_actions: list[str] = Field(default_factory=list)
+    quality_gate_policy: QualityGatePolicy = Field(default_factory=QualityGatePolicy)
+    quality_gate_summary: QualityGateSummary = Field(default_factory=QualityGateSummary)
 
 
 class RunnerContext(BaseModel):
@@ -437,6 +541,7 @@ class WorkflowRunRead(BaseModel):
     success_rate: float = 0.0
     retries_total: int = 0
     per_role: list[WorkflowRunRoleMetric] = Field(default_factory=list)
+    quality_gate_summary: QualityGateRunSummary = Field(default_factory=QualityGateRunSummary)
 
 
 class WorkflowRunDispatchReadyResponse(BaseModel):
@@ -489,6 +594,7 @@ class WorkflowRunExecutionTaskSummary(BaseModel):
     consumed_artifact_ids: list[int] = Field(default_factory=list)
     produced_artifact_ids: list[int] = Field(default_factory=list)
     handoff_summary: str | None = None
+    quality_gate_summary: QualityGateSummary = Field(default_factory=QualityGateSummary)
 
 
 class WorkflowRunExecutionSummary(BaseModel):
@@ -620,6 +726,7 @@ class WorkflowStep(BaseModel):
     title: str = Field(min_length=1)
     depends_on: list[str] = Field(default_factory=list)
     required_artifacts: list["WorkflowArtifactRequirement"] = Field(default_factory=list)
+    quality_gate_policy: QualityGatePolicy = Field(default_factory=_default_task_quality_gate_policy)
 
     @model_validator(mode="after")
     def validate_required_artifacts(self) -> "WorkflowStep":
@@ -678,6 +785,7 @@ class AssistantPlanStepRead(BaseModel):
     title: str
     depends_on: list[str] = Field(default_factory=list)
     required_artifacts: list[WorkflowArtifactRequirement] = Field(default_factory=list)
+    quality_gate_policy: QualityGatePolicy = Field(default_factory=_default_task_quality_gate_policy)
     task_config: WorkflowRunStepTaskOverride
 
 

@@ -47,6 +47,7 @@
 
 - Observability dashboards (status and queue depth).
 - Audit timeline for run/task decisions.
+- Unified quality-gate summaries for code/content workflows.
 - Integration tests for key workflows.
 - Documentation and operator runbook.
 

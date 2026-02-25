@@ -16,6 +16,61 @@ export type ExecutionMode =
   | "shared-workspace"
   | "isolated-worktree"
   | "docker-sandbox";
+export type QualityGateSeverity = "blocker" | "warn";
+export type QualityGateCheckStatus = "pass" | "fail" | "pending" | "skipped";
+export type QualityGateSummaryStatus = "pass" | "fail" | "pending" | "not-configured";
+
+export type QualityGateCheckPolicy = {
+  check: string;
+  required: boolean;
+  severity: QualityGateSeverity;
+  config: Record<string, unknown>;
+  description: string | null;
+};
+
+export type QualityGatePolicy = {
+  required_checks: QualityGateCheckPolicy[];
+};
+
+export type QualityGateCheckResult = {
+  check: string;
+  status: QualityGateCheckStatus;
+  severity: QualityGateSeverity;
+  required: boolean;
+  blocker: boolean;
+  message: string;
+  details: Record<string, unknown>;
+};
+
+export type QualityGateSummary = {
+  status: QualityGateSummaryStatus;
+  summary_text: string;
+  total_checks: number;
+  passed_checks: number;
+  failed_checks: number;
+  pending_checks: number;
+  skipped_checks: number;
+  blocker_failures: number;
+  warning_failures: number;
+  checks: QualityGateCheckResult[];
+};
+
+export type QualityGateRunSummary = {
+  status: QualityGateSummaryStatus;
+  summary_text: string;
+  total_tasks: number;
+  passing_tasks: number;
+  failing_tasks: number;
+  pending_tasks: number;
+  not_configured_tasks: number;
+  total_checks: number;
+  passed_checks: number;
+  failed_checks: number;
+  pending_checks: number;
+  skipped_checks: number;
+  blocker_failures: number;
+  warning_failures: number;
+};
 
 export type RoleRead = {
   id: number;
@@ -44,6 +99,8 @@ export type TaskRead = {
   failure_category: string | null;
   failure_triage_hints: string[];
   suggested_next_actions: string[];
+  quality_gate_policy?: QualityGatePolicy;
+  quality_gate_summary?: QualityGateSummary;
 };
 
 export type TaskHandoffArtifactRef = {
@@ -109,6 +166,7 @@ export type WorkflowRunRead = {
   success_rate: number;
   retries_total: number;
   per_role: WorkflowRunRoleMetric[];
+  quality_gate_summary?: QualityGateRunSummary;
 };
 
 export type WorkflowRunDispatchReadyResponse = {
