@@ -87,6 +87,14 @@
 - `TASK-052` (`P1`, `done`): Auto-triage failed runs
 - `TASK-053` (`P2`, `todo`): Template recommendation engine
 
+
+### EPIC-10 Assistant-first production operations
+- `TASK-055` (`P0`, `in_progress`): Content workflow pack (article/social/localization)
+- `TASK-056` (`P0`, `in_progress`): Unified quality gates (code + content)
+- `TASK-057` (`P0`, `in_progress`): Partial re-run engine (failed branches only)
+- `TASK-058` (`P0`, `in_progress`): Process transparency timeline
+- `TASK-059` (`P1`, `todo`): Developer workflow pack (feature/bugfix/release/incident)
+
 ## Operating rule
 
 Before starting implementation, create/update task file from template:
