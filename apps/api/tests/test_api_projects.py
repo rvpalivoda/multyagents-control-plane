@@ -1,3 +1,6 @@
+from pathlib import Path
+import tempfile
+
 from fastapi.testclient import TestClient
 
 from multyagents_api.main import app
@@ -89,6 +92,26 @@ def test_delete_project_with_linked_workflow_returns_conflict() -> None:
 
     delete_response = client.delete(f"/projects/{project['id']}")
     assert delete_response.status_code == 409
+
+
+def test_create_project_creates_physical_directories() -> None:
+    with tempfile.TemporaryDirectory(prefix="multyagents-project-") as temp_root:
+        root = Path(temp_root) / "demo-project"
+        src = root / "src"
+        docs = root / "docs"
+
+        response = client.post(
+            "/projects",
+            json={
+                "name": "physical-create",
+                "root_path": str(root),
+                "allowed_paths": [str(src), str(docs)],
+            },
+        )
+        assert response.status_code == 200
+        assert root.is_dir()
+        assert src.is_dir()
+        assert docs.is_dir()
 
 
 def test_create_project_rejects_relative_root_path() -> None:

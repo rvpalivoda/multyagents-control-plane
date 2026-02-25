@@ -266,6 +266,14 @@ class InMemoryStore:
         self._persist_state()
 
     def create_project(self, project: ProjectCreate) -> ProjectRead:
+        root = Path(project.root_path)
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+            for allowed in project.allowed_paths:
+                Path(allowed).mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ValidationError(f"failed to prepare project paths: {exc}") from exc
+
         project_id = self._project_seq
         self._project_seq += 1
         record = _ProjectRecord(
