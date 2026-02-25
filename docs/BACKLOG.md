@@ -116,6 +116,16 @@
 ### EPIC-12 Test hardening and reliability gates
 - `TASK-070` (`P0`, `done`): Fix stress-smoke scenario script packaging
 
+
+### EPIC-13 Reliability hardening beyond smoke
+- `TASK-071` (`P0`, `in_progress`): Chaos E2E failure drills
+- `TASK-072` (`P0`, `in_progress`): Concurrency and race-condition stress suite
+- `TASK-073` (`P1`, `todo`): Restart persistence invariant tests
+- `TASK-074` (`P1`, `todo`): Security and policy adversarial tests
+- `TASK-075` (`P1`, `todo`): Playwright UI E2E critical journeys
+- `TASK-076` (`P2`, `todo`): SLO performance and soak tests
+- `TASK-077` (`P1`, `todo`): Release gate v2 (hard fail policies)
+
 ## Operating rule
 
 Before starting implementation, create/update task file from template:
