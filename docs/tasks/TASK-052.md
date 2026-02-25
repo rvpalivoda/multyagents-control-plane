@@ -56,4 +56,4 @@
 - Обновлены контракты (`packages/contracts/ts` + JSON schema).
 - Обновлены spec/architecture формулировки для triage behavior.
 
-- Commits: `<final-sha>`
+- Commits: `ac5e476`
