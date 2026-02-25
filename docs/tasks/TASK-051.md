@@ -42,4 +42,4 @@
   - API: `apps/api/tests/test_api_run_rollup.py`.
   - API regression: `.venv/bin/pytest -q tests/test_api_run_rollup.py tests/test_api_assistant_intents.py tests/test_api_control_loop.py tests/test_api_retry_strategy.py` -> passed (13).
   - UI: `npm test` and `npm run build` -> passed.
-- Commits: `<final-sha>`
+- Commits: `34157b6`
