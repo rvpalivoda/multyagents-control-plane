@@ -407,6 +407,17 @@ class WorkflowRunCreate(BaseModel):
         return self
 
 
+class WorkflowRunRoleMetric(BaseModel):
+    role_id: int
+    task_count: int = 0
+    successful_tasks: int = 0
+    failed_tasks: int = 0
+    throughput_tasks: int = 0
+    success_rate: float = 0.0
+    retries_total: int = 0
+    duration_ms: int | None = None
+
+
 class WorkflowRunRead(BaseModel):
     id: int
     workflow_template_id: int | None = None
@@ -418,6 +429,10 @@ class WorkflowRunRead(BaseModel):
     retry_summary: dict[str, Any] = Field(default_factory=dict)
     failure_categories: list[str] = Field(default_factory=list)
     failure_triage_hints: list[str] = Field(default_factory=list)
+    duration_ms: int | None = None
+    success_rate: float = 0.0
+    retries_total: int = 0
+    per_role: list[WorkflowRunRoleMetric] = Field(default_factory=list)
 
 
 class WorkflowRunDispatchReadyResponse(BaseModel):

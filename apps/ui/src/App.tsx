@@ -246,6 +246,35 @@ function workflowPresetToDrafts(preset: WorkflowPreset, defaultRoleId: number | 
   }));
 }
 
+function toSafeNumber(value: unknown): number | null {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return null;
+  }
+  return value;
+}
+
+function formatDurationMs(value: number | null): string {
+  if (value === null || value < 0) {
+    return "-";
+  }
+  const seconds = Math.round(value / 1000);
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) {
+    return `${minutes}m ${remainingSeconds}s`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}h ${remainingMinutes}m`;
+}
+
+function formatPercentage(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
 export function App() {
   const [activeTab, setActiveTab] = useState<UiTab>("overview");
   const [roleName, setRoleName] = useState("coder");
@@ -479,6 +508,33 @@ export function App() {
     () => tasks.filter((item) => item.status === "failed" || item.status === "submit-failed"),
     [tasks]
   );
+  const runMetricsSummary = useMemo(() => {
+    const durationValues = workflowRuns
+      .map((run) => toSafeNumber(run.duration_ms))
+      .filter((value): value is number => value !== null);
+    const successRateValues = workflowRuns
+      .map((run) => toSafeNumber(run.success_rate))
+      .filter((value): value is number => value !== null);
+    const retriesTotal = workflowRuns.reduce((total, run) => {
+      const retries = toSafeNumber(run.retries_total);
+      return total + (retries ?? 0);
+    }, 0);
+
+    const averageDurationMs =
+      durationValues.length > 0
+        ? Math.round(durationValues.reduce((total, value) => total + value, 0) / durationValues.length)
+        : null;
+    const averageSuccessRate =
+      successRateValues.length > 0
+        ? successRateValues.reduce((total, value) => total + value, 0) / successRateValues.length
+        : 0;
+
+    return {
+      averageDurationLabel: formatDurationMs(averageDurationMs),
+      averageSuccessRateLabel: formatPercentage(averageSuccessRate),
+      retriesTotal
+    };
+  }, [workflowRuns]);
   const selectedRunTasks = useMemo(() => {
     if (!selectedRun) {
       return [];
@@ -1422,6 +1478,9 @@ export function App() {
             pendingApprovalsCount={pendingApprovals.length}
             failedRunsCount={failedRuns.length}
             failedTasksCount={failedTasks.length}
+            averageRunDurationLabel={runMetricsSummary.averageDurationLabel}
+            averageRunSuccessRateLabel={runMetricsSummary.averageSuccessRateLabel}
+            totalRunRetries={runMetricsSummary.retriesTotal}
             pendingApprovalsPreview={pendingApprovals}
             onOpenApprovals={() => setActiveTab("approvals")}
             onOpenRuns={() => setActiveTab("runs")}
@@ -1926,6 +1985,7 @@ export function App() {
             runSearchInput={runSearchInput}
             selectedRunId={selectedRunId}
             filteredRuns={filteredRuns}
+            roleNameById={roleNameById}
             workflowNameById={workflowNameById}
             workflowProjectIdById={workflowProjectIdById}
             projectNameById={projectNameById}

@@ -17,6 +17,7 @@ type RunsCenterSectionProps = {
   runSearchInput: string;
   selectedRunId: number | null;
   filteredRuns: WorkflowRunRead[];
+  roleNameById: Record<number, string>;
   workflowNameById: Record<number, string>;
   workflowProjectIdById: Record<number, number | null>;
   projectNameById: Record<number, string>;
@@ -82,6 +83,31 @@ function buildHandoffBoard(events: EventRead[]): HandoffBoardItem[] {
   return items.sort((left, right) => left.eventId - right.eventId);
 }
 
+function formatDurationMs(value: number | null | undefined): string {
+  if (typeof value !== "number" || Number.isNaN(value) || value < 0) {
+    return "-";
+  }
+  const seconds = Math.round(value / 1000);
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) {
+    return `${minutes}m ${remainingSeconds}s`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}h ${remainingMinutes}m`;
+}
+
+function formatPercentage(value: number | null | undefined): string {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return "-";
+  }
+  return `${value.toFixed(1)}%`;
+}
+
 export function RunsCenterSection(props: RunsCenterSectionProps) {
   const {
     sectionClass,
@@ -98,6 +124,7 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
     runSearchInput,
     selectedRunId,
     filteredRuns,
+    roleNameById,
     workflowNameById,
     workflowProjectIdById,
     projectNameById,
@@ -173,6 +200,9 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
                 <tr>
                   <th className={thClass}>id</th>
                   <th className={thClass}>status</th>
+                  <th className={thClass}>duration</th>
+                  <th className={thClass}>success rate</th>
+                  <th className={thClass}>retries</th>
                   <th className={thClass}>template</th>
                   <th className={thClass}>project</th>
                   <th className={thClass}>updated</th>
@@ -189,6 +219,9 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
                     >
                       <td className={tdClass}>{run.id}</td>
                       <td className={tdClass}>{run.status}</td>
+                      <td className={tdClass}>{formatDurationMs(run.duration_ms)}</td>
+                      <td className={tdClass}>{formatPercentage(run.success_rate)}</td>
+                      <td className={tdClass}>{run.retries_total}</td>
                       <td className={tdClass}>
                         {run.workflow_template_id === null
                           ? "-"
@@ -216,9 +249,29 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
                 </p>
                 <p>Template: {selectedRun.workflow_template_id ?? "-"}</p>
                 <p>Tasks: {selectedRun.task_ids.join(", ") || "-"}</p>
+                <p>Duration: {formatDurationMs(selectedRun.duration_ms)}</p>
+                <p>Success rate: {formatPercentage(selectedRun.success_rate)}</p>
+                <p>Retries: {selectedRun.retries_total}</p>
               </div>
             ) : (
               <p className="mt-2 text-sm text-slate-500">Select a run from the left table.</p>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <p className={labelClass}>Per-role throughput</p>
+            {selectedRun && selectedRun.per_role.length > 0 ? (
+              <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                {selectedRun.per_role.map((metric) => (
+                  <li key={metric.role_id}>
+                    {roleNameById[metric.role_id] ?? `role ${metric.role_id}`}: throughput {metric.throughput_tasks}/
+                    {metric.task_count}, success {formatPercentage(metric.success_rate)}, retries {metric.retries_total},
+                    duration {formatDurationMs(metric.duration_ms)}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-sm text-slate-500">No per-role metrics yet.</p>
             )}
           </div>
 

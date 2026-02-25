@@ -238,6 +238,30 @@
       },
       "additionalProperties": false
     },
+    "WorkflowRunRoleMetric": {
+      "type": "object",
+      "required": [
+        "role_id",
+        "task_count",
+        "successful_tasks",
+        "failed_tasks",
+        "throughput_tasks",
+        "success_rate",
+        "retries_total",
+        "duration_ms"
+      ],
+      "properties": {
+        "role_id": { "type": "integer", "minimum": 1 },
+        "task_count": { "type": "integer", "minimum": 0 },
+        "successful_tasks": { "type": "integer", "minimum": 0 },
+        "failed_tasks": { "type": "integer", "minimum": 0 },
+        "throughput_tasks": { "type": "integer", "minimum": 0 },
+        "success_rate": { "type": "number", "minimum": 0, "maximum": 100 },
+        "retries_total": { "type": "integer", "minimum": 0 },
+        "duration_ms": { "type": ["integer", "null"], "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
     "WorkflowRunRead": {
       "type": "object",
       "required": [
@@ -247,7 +271,11 @@
         "status",
         "initiated_by",
         "created_at",
-        "updated_at"
+        "updated_at",
+        "duration_ms",
+        "success_rate",
+        "retries_total",
+        "per_role"
       ],
       "properties": {
         "id": { "type": "integer", "minimum": 1 },
@@ -268,6 +296,13 @@
         "failure_triage_hints": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
+        },
+        "duration_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "success_rate": { "type": "number", "minimum": 0, "maximum": 100 },
+        "retries_total": { "type": "integer", "minimum": 0 },
+        "per_role": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/WorkflowRunRoleMetric" }
         }
       },
       "additionalProperties": false

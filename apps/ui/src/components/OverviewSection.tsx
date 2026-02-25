@@ -9,6 +9,9 @@ type OverviewSectionProps = {
   pendingApprovalsCount: number;
   failedRunsCount: number;
   failedTasksCount: number;
+  averageRunDurationLabel: string;
+  averageRunSuccessRateLabel: string;
+  totalRunRetries: number;
   pendingApprovalsPreview: ApprovalRead[];
   onOpenApprovals: () => void;
   onOpenRuns: () => void;
@@ -25,6 +28,9 @@ export function OverviewSection(props: OverviewSectionProps) {
     pendingApprovalsCount,
     failedRunsCount,
     failedTasksCount,
+    averageRunDurationLabel,
+    averageRunSuccessRateLabel,
+    totalRunRetries,
     pendingApprovalsPreview,
     onOpenApprovals,
     onOpenRuns,
@@ -50,6 +56,14 @@ export function OverviewSection(props: OverviewSectionProps) {
         </div>
       </div>
       <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <p className={labelClass}>Run efficiency</p>
+          <ul className="mt-2 space-y-1 text-sm text-slate-700">
+            <li>Average duration: {averageRunDurationLabel}</li>
+            <li>Average success rate: {averageRunSuccessRateLabel}</li>
+            <li>Total retries: {totalRunRetries}</li>
+          </ul>
+        </div>
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
           <p className={labelClass}>Needs attention</p>
           <ul className="mt-2 space-y-1 text-sm text-slate-700">

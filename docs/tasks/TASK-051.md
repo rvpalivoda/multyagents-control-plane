@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `in_progress`
+- Status: `done`
 - Priority: `P1`
 - Owner: `codex`
 - Created: `2026-02-25`
@@ -27,13 +27,19 @@
 
 ## Acceptance criteria
 
-- [ ] Реализовано минимально полезно для ежедневной работы.
-- [ ] Покрыто тестами/валидацией.
+- [x] Реализовано минимально полезно для ежедневной работы.
+- [x] Покрыто тестами/валидацией.
 
 ## Test plan
 
-- [ ] Targeted tests + smoke.
+- [x] Targeted tests + smoke.
 
 ## Result
 
-- Commits: `<sha1>`
+- Backend: `WorkflowRunRead` расширен метриками `duration_ms`, `success_rate`, `retries_total`, `per_role[]` с вычислением в `store.py` на основе task status/timestamps и `task.dispatched` событий.
+- UI: дашборд в `Overview` и `Runs Center` показывает duration/success rate/retries + per-role throughput для выбранного run.
+- Tests:
+  - API: `apps/api/tests/test_api_run_rollup.py`.
+  - API regression: `.venv/bin/pytest -q tests/test_api_run_rollup.py tests/test_api_assistant_intents.py tests/test_api_control_loop.py tests/test_api_retry_strategy.py` -> passed (13).
+  - UI: `npm test` and `npm run build` -> passed.
+- Commits: `<final-sha>`

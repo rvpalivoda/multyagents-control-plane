@@ -55,6 +55,7 @@ from multyagents_api.schemas import (
     WorkflowRunExecutionSummary,
     WorkflowRunExecutionTaskSummary,
     WorkflowRunRead,
+    WorkflowRunRoleMetric,
     WorkflowRunStepTaskOverride,
     WorkflowRunStatus,
     WorkflowStep,
@@ -2845,8 +2846,136 @@ class InMemoryStore:
             exit_code=record.exit_code,
         )
 
+    @staticmethod
+    def _parse_timestamp(raw: str | None) -> datetime | None:
+        if raw is None:
+            return None
+        candidate = raw.strip()
+        if not candidate:
+            return None
+        if candidate.endswith("Z"):
+            candidate = f"{candidate[:-1]}+00:00"
+        try:
+            parsed = datetime.fromisoformat(candidate)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed
+
+    @classmethod
+    def _duration_ms(
+        cls,
+        *,
+        started_at: str | None,
+        finished_at: str | None,
+        fallback_end: datetime | None = None,
+    ) -> int | None:
+        started = cls._parse_timestamp(started_at)
+        if started is None:
+            return None
+        finished = cls._parse_timestamp(finished_at) if finished_at is not None else fallback_end
+        if finished is None or finished < started:
+            return None
+        return int((finished - started).total_seconds() * 1000)
+
+    def _dispatch_attempts_by_task_id(self, run_id: int) -> dict[int, int]:
+        attempts: dict[int, int] = {}
+        for event in self._events:
+            if event.run_id != run_id:
+                continue
+            if event.event_type != "task.dispatched" or event.task_id is None:
+                continue
+            attempts[event.task_id] = attempts.get(event.task_id, 0) + 1
+        return attempts
+
+    def _build_workflow_run_metrics(
+        self,
+        record: _WorkflowRunRecord,
+    ) -> tuple[int | None, float, int, list[WorkflowRunRoleMetric]]:
+        task_records = [self._tasks[task_id] for task_id in record.task_ids if task_id in self._tasks]
+        if not task_records:
+            return None, 0.0, 0, []
+
+        updated_at = self._parse_timestamp(record.updated_at)
+        dispatch_attempts = self._dispatch_attempts_by_task_id(record.id)
+        retries_total = sum(max(0, attempts - 1) for attempts in dispatch_attempts.values())
+
+        successful_tasks = sum(1 for task in task_records if task.status == TaskStatus.SUCCESS.value)
+        success_rate = round((successful_tasks / len(task_records)) * 100, 2)
+
+        started_times = [self._parse_timestamp(task.started_at) for task in task_records]
+        start_candidates = [item for item in started_times if item is not None]
+        end_candidates = [self._parse_timestamp(task.finished_at) for task in task_records if task.finished_at is not None]
+        if updated_at is not None and any(task.started_at is not None and task.finished_at is None for task in task_records):
+            end_candidates.append(updated_at)
+        end_candidates = [item for item in end_candidates if item is not None]
+        duration_ms: int | None = None
+        if start_candidates and end_candidates:
+            started = min(start_candidates)
+            finished = max(end_candidates)
+            if finished >= started:
+                duration_ms = int((finished - started).total_seconds() * 1000)
+
+        failed_statuses = {
+            TaskStatus.FAILED.value,
+            TaskStatus.CANCELED.value,
+            TaskStatus.SUBMIT_FAILED.value,
+        }
+        role_aggregate: dict[int, dict[str, int]] = {}
+        for task in task_records:
+            aggregate = role_aggregate.setdefault(
+                task.role_id,
+                {
+                    "task_count": 0,
+                    "successful_tasks": 0,
+                    "failed_tasks": 0,
+                    "throughput_tasks": 0,
+                    "retries_total": 0,
+                    "duration_ms_total": 0,
+                    "duration_samples": 0,
+                },
+            )
+            aggregate["task_count"] += 1
+            if task.status == TaskStatus.SUCCESS.value:
+                aggregate["successful_tasks"] += 1
+                aggregate["throughput_tasks"] += 1
+            elif task.status in failed_statuses:
+                aggregate["failed_tasks"] += 1
+                aggregate["throughput_tasks"] += 1
+            aggregate["retries_total"] += max(0, dispatch_attempts.get(task.id, 0) - 1)
+
+            task_duration_ms = self._duration_ms(
+                started_at=task.started_at,
+                finished_at=task.finished_at,
+                fallback_end=updated_at if task.finished_at is None else None,
+            )
+            if task_duration_ms is not None:
+                aggregate["duration_ms_total"] += task_duration_ms
+                aggregate["duration_samples"] += 1
+
+        per_role: list[WorkflowRunRoleMetric] = []
+        for role_id in sorted(role_aggregate):
+            aggregate = role_aggregate[role_id]
+            role_success_rate = round((aggregate["successful_tasks"] / aggregate["task_count"]) * 100, 2)
+            per_role.append(
+                WorkflowRunRoleMetric(
+                    role_id=role_id,
+                    task_count=aggregate["task_count"],
+                    successful_tasks=aggregate["successful_tasks"],
+                    failed_tasks=aggregate["failed_tasks"],
+                    throughput_tasks=aggregate["throughput_tasks"],
+                    success_rate=role_success_rate,
+                    retries_total=aggregate["retries_total"],
+                    duration_ms=aggregate["duration_ms_total"] if aggregate["duration_samples"] > 0 else None,
+                )
+            )
+
+        return duration_ms, success_rate, retries_total, per_role
+
     def _to_workflow_run_read(self, record: _WorkflowRunRecord) -> WorkflowRunRead:
         retry_summary, failure_categories, failure_triage_hints = self._build_workflow_retry_surface(record)
+        duration_ms, success_rate, retries_total, per_role = self._build_workflow_run_metrics(record)
         return WorkflowRunRead(
             id=record.id,
             workflow_template_id=record.workflow_template_id,
@@ -2858,6 +2987,10 @@ class InMemoryStore:
             retry_summary=retry_summary,
             failure_categories=failure_categories,
             failure_triage_hints=failure_triage_hints,
+            duration_ms=duration_ms,
+            success_rate=success_rate,
+            retries_total=retries_total,
+            per_role=per_role,
         )
 
     def _build_workflow_retry_surface(

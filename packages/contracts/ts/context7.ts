@@ -79,6 +79,17 @@ export type TaskAudit = {
   failure_triage_hints?: string[];
 };
 
+export type WorkflowRunRoleMetric = {
+  role_id: number;
+  task_count: number;
+  successful_tasks: number;
+  failed_tasks: number;
+  throughput_tasks: number;
+  success_rate: number;
+  retries_total: number;
+  duration_ms: number | null;
+};
+
 export type WorkflowRunRead = {
   id: number;
   workflow_template_id: number | null;
@@ -90,6 +101,10 @@ export type WorkflowRunRead = {
   retry_summary?: Record<string, unknown>;
   failure_categories?: string[];
   failure_triage_hints?: string[];
+  duration_ms: number | null;
+  success_rate: number;
+  retries_total: number;
+  per_role: WorkflowRunRoleMetric[];
 };
 
 export type WorkflowRunDispatchReadyResponse = {
