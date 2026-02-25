@@ -21,3 +21,7 @@
 
 - Tag milestone commits (`v0.x.y`)
 - Keep changelog entries per feature/fix cluster
+
+## Troubleshooting
+
+- Local gateway/sandbox failures: 
