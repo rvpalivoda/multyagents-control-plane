@@ -601,6 +601,17 @@ class WorkflowRunExecutionTaskSummary(BaseModel):
     quality_gate_summary: QualityGateSummary = Field(default_factory=QualityGateSummary)
 
 
+class WorkflowRunTimelineEntry(BaseModel):
+    task_id: int
+    branch: str
+    owner_role_id: int
+    stage_id: str
+    stage: str
+    stage_state: str
+    progress_percent: float = 0.0
+    blocked_reasons: list[str] = Field(default_factory=list)
+
+
 class WorkflowRunExecutionSummary(BaseModel):
     run: WorkflowRunRead
     task_status_counts: dict[str, int] = Field(default_factory=dict)
@@ -613,6 +624,7 @@ class WorkflowRunExecutionSummary(BaseModel):
     failed_task_ids: list[int] = Field(default_factory=list)
     active_task_ids: list[int] = Field(default_factory=list)
     pending_task_ids: list[int] = Field(default_factory=list)
+    timeline: list[WorkflowRunTimelineEntry] = Field(default_factory=list)
     tasks: list[WorkflowRunExecutionTaskSummary] = Field(default_factory=list)
 
 

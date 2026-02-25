@@ -37,6 +37,36 @@ export type WorkflowRunPartialRerunRequest = {
   max_dispatch: number;
 };
 
+export type WorkflowRunTimelineEntry = {
+  task_id: number;
+  branch: string;
+  owner_role_id: number;
+  stage_id: string;
+  stage: string;
+  stage_state: "active" | "blocked" | "done";
+  progress_percent: number;
+  blocked_reasons: string[];
+};
+
+export type WorkflowRunExecutionSummary = {
+  run: Record<string, unknown>;
+  task_status_counts: Record<string, number>;
+  terminal: boolean;
+  partial_completion: boolean;
+  progress_percent: number;
+  branch_status_cards: {
+    active: number;
+    blocked: number;
+    done: number;
+  };
+  next_dispatch: WorkflowRunDispatchPlan;
+  successful_task_ids: number[];
+  failed_task_ids: number[];
+  active_task_ids: number[];
+  pending_task_ids: number[];
+  timeline: WorkflowRunTimelineEntry[];
+};
+
 export type WorkflowRunPartialRerunResponse = {
   run_id: number;
   requested_by: string;
@@ -51,7 +81,7 @@ export type WorkflowRunPartialRerunResponse = {
     task_status: TaskStatus;
     error?: string | null;
   }>;
-  aggregate: Record<string, unknown>;
+  aggregate: WorkflowRunExecutionSummary;
 };
 
 export type WorkflowStep = {

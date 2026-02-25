@@ -63,6 +63,7 @@ from multyagents_api.schemas import (
     WorkflowRunDispatchPlanItem,
     WorkflowRunExecutionSummary,
     WorkflowRunExecutionTaskSummary,
+    WorkflowRunTimelineEntry,
     WorkflowRunRead,
     WorkflowRunRoleMetric,
     WorkflowRunStepTaskOverride,
@@ -1013,6 +1014,54 @@ class InMemoryStore:
                 )
             )
 
+        blocked_by_task_id: dict[int, list[str]] = {}
+        for item in self.plan_workflow_run_dispatch(run_id, max_tasks=max(len(run.task_ids), 1)).blocked:
+            if item.task_id is None:
+                continue
+            blocked_by_task_id.setdefault(item.task_id, []).append(item.reason)
+
+        step_by_task_id: dict[int, WorkflowStep] = {}
+        if run.workflow_template_id is not None:
+            workflow = self._workflow_templates.get(run.workflow_template_id)
+            if workflow is not None:
+                for index, task_id in enumerate(run.task_ids):
+                    if index < len(workflow.steps):
+                        step_by_task_id[task_id] = workflow.steps[index]
+
+        timeline: list[WorkflowRunTimelineEntry] = []
+        for task in task_summaries:
+            step = step_by_task_id.get(task.task_id)
+            step_id = step.step_id if step is not None else f"task-{task.task_id}"
+            step_title = step.title if step is not None else task.title
+            depends_on = list(step.depends_on) if step is not None else []
+            branch = "+".join(depends_on) if depends_on else step_id
+
+            if task.status == TaskStatus.SUCCESS.value:
+                stage_state = "done"
+            elif task.status in (TaskStatus.FAILED.value, TaskStatus.CANCELED.value, TaskStatus.SUBMIT_FAILED.value):
+                stage_state = "blocked"
+            elif task.status in (TaskStatus.DISPATCHED.value, TaskStatus.QUEUED.value, TaskStatus.RUNNING.value, TaskStatus.CANCEL_REQUESTED.value):
+                stage_state = "active"
+            else:
+                stage_state = "blocked" if blocked_by_task_id.get(task.task_id) else "active"
+
+            blocked_reasons = list(blocked_by_task_id.get(task.task_id, []))
+            if task.status == TaskStatus.SUBMIT_FAILED.value and "task-submit-failed" not in blocked_reasons:
+                blocked_reasons.append("task-submit-failed")
+
+            timeline.append(
+                WorkflowRunTimelineEntry(
+                    task_id=task.task_id,
+                    branch=branch,
+                    owner_role_id=task.role_id,
+                    stage_id=step_id,
+                    stage=step_title,
+                    stage_state=stage_state,
+                    progress_percent=100.0 if stage_state == "done" else 0.0,
+                    blocked_reasons=blocked_reasons,
+                )
+            )
+
         total_tasks = len(task_summaries)
         done_count = len(successful_task_ids)
         blocked_count = len(failed_task_ids) + len(pending_task_ids)
@@ -1035,6 +1084,7 @@ class InMemoryStore:
             failed_task_ids=failed_task_ids,
             active_task_ids=active_task_ids,
             pending_task_ids=pending_task_ids,
+            timeline=timeline,
             tasks=task_summaries,
         )
 

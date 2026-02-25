@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import type { EventRead, TaskRead, WorkflowRunRead } from "../../../../packages/contracts/ts/context7";
 import type {
   WorkflowRunDispatchReadyResponse,
+  WorkflowRunExecutionSummary,
   WorkflowRunPartialRerunRequest,
   WorkflowRunPartialRerunResponse
 } from "../types/controlPanel";
@@ -28,6 +29,7 @@ type RunsCenterSectionProps = {
   projectNameById: Record<number, string>;
   selectedRun: WorkflowRunRead | null;
   selectedRunTasks: TaskRead[];
+  selectedRunExecutionSummary: WorkflowRunExecutionSummary | null;
   runDispatchResult: WorkflowRunDispatchReadyResponse | null;
   runPartialRerunResult: WorkflowRunPartialRerunResponse | null;
   timelineEvents: EventRead[];
@@ -172,6 +174,7 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
     projectNameById,
     selectedRun,
     selectedRunTasks,
+    selectedRunExecutionSummary,
     runDispatchResult,
     runPartialRerunResult,
     timelineEvents,
@@ -370,6 +373,56 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
               </div>
             ) : (
               <p className="mt-2 text-sm text-slate-500">Select a run from the left table.</p>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <p className={labelClass}>Execution cards</p>
+            {!selectedRunExecutionSummary ? (
+              <p className="mt-2 text-sm text-slate-500">No execution summary loaded yet.</p>
+            ) : (
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-4 text-sm">
+                <div className="rounded border border-slate-200 bg-white px-2 py-1">Progress: {formatPercentage(selectedRunExecutionSummary.progress_percent)}</div>
+                <div className="rounded border border-slate-200 bg-white px-2 py-1">Active: {selectedRunExecutionSummary.branch_status_cards.active}</div>
+                <div className="rounded border border-slate-200 bg-white px-2 py-1">Blocked: {selectedRunExecutionSummary.branch_status_cards.blocked}</div>
+                <div className="rounded border border-slate-200 bg-white px-2 py-1">Done: {selectedRunExecutionSummary.branch_status_cards.done}</div>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <p className={labelClass}>Process transparency timeline</p>
+            {!selectedRunExecutionSummary || selectedRunExecutionSummary.timeline.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-500">No timeline entries yet.</p>
+            ) : (
+              <div className="mt-2 max-h-52 overflow-auto rounded border border-slate-200 bg-white">
+                <table className={tableClass}>
+                  <thead>
+                    <tr>
+                      <th className={thClass}>task</th>
+                      <th className={thClass}>branch</th>
+                      <th className={thClass}>owner</th>
+                      <th className={thClass}>stage</th>
+                      <th className={thClass}>state</th>
+                      <th className={thClass}>progress</th>
+                      <th className={thClass}>blockers</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedRunExecutionSummary.timeline.map((item) => (
+                      <tr key={`timeline-${item.task_id}`}>
+                        <td className={tdClass}>#{item.task_id}</td>
+                        <td className={tdClass}>{item.branch}</td>
+                        <td className={tdClass}>{roleNameById[item.owner_role_id] ?? `role ${item.owner_role_id}`}</td>
+                        <td className={tdClass}>{item.stage}</td>
+                        <td className={tdClass}>{item.stage_state}</td>
+                        <td className={tdClass}>{formatPercentage(item.progress_percent)}</td>
+                        <td className={tdClass}>{item.blocked_reasons.length > 0 ? item.blocked_reasons.join(", ") : "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
 

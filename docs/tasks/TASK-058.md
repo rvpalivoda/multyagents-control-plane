@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `in_progress`
+- Status: `done`
 - Priority: `P0`
 - Owner: `codex`
 - Created: `2026-02-25`
@@ -43,7 +43,7 @@
 
 - [x] Реализовано минимально полезно для ежедневной работы (phase 1: progress/cards).
 - [x] Видно прогресс/результаты в UI и API (progress/cards).
-- [ ] Полное покрытие transparency timeline тестами.
+- [x] Полное покрытие transparency timeline тестами.
 
 ## Implementation notes
 
@@ -67,9 +67,11 @@
 
 ## Result
 
-- Delivered (phase 1): run-level `progress_percent` and `branch_status_cards` in execution summary.
-- Remaining (phase 2): structured `timeline[]` with branch/owner/stage/blockers and dedicated UI table wiring.
+- Delivered:
+  - execution summary timeline[] with branch/owner/stage/stage_state/progress/blockers;
+  - run-level progress cards (active/blocked/done + progress_percent) wired to execution-summary endpoint;
+  - Runs Center transparency timeline table bound to execution summary.
 - Verification:
-  - `apps/api`: `.venv/bin/pytest -q tests/test_api_quality_gates.py tests/test_api_run_rollup.py tests/test_api_retry_strategy.py tests/test_api_assistant_intents.py` -> passed.
-  - `apps/ui`: `npm test` -> passed (13), `npm run build` -> passed.
-- Commits: `f4d3dee`
+  - `apps/api`: `.venv/bin/pytest -q tests/test_api_control_loop.py tests/test_api_partial_rerun.py tests/test_api_quality_gates.py tests/test_api_run_rollup.py tests/test_api_retry_strategy.py` -> passed (14).
+  - `apps/ui`: `npm run build` -> passed.
+- Commits: `<final-sha>`

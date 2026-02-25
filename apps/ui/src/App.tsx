@@ -29,6 +29,7 @@ import type {
   SkillPackRead,
   UiTab,
   WorkflowRunDispatchReadyResponse,
+  WorkflowRunExecutionSummary,
   WorkflowRunPartialRerunRequest,
   WorkflowRunPartialRerunResponse,
   WorkflowStep,
@@ -419,6 +420,7 @@ export function App() {
   const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunRead[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [timelineEvents, setTimelineEvents] = useState<EventRead[]>([]);
+  const [selectedRunExecutionSummary, setSelectedRunExecutionSummary] = useState<WorkflowRunExecutionSummary | null>(null);
   const [runDispatchResult, setRunDispatchResult] = useState<WorkflowRunDispatchReadyResponse | null>(null);
   const [runPartialRerunResult, setRunPartialRerunResult] = useState<WorkflowRunPartialRerunResponse | null>(null);
 
@@ -754,7 +756,7 @@ export function App() {
       setWorkflowRuns(items);
       if (selectedRunId === null && items.length > 0) {
         setSelectedRunId(items[0].id);
-        await loadTimelineEvents(items[0].id, null);
+        await Promise.all([loadTimelineEvents(items[0].id, null), loadRunExecutionSummary(items[0].id)]);
       }
     } catch (err) {
       setError((err as Error).message);
@@ -784,6 +786,20 @@ export function App() {
     const path = query.length > 0 ? `/events?${query}` : "/events";
     const items = await apiGet<EventRead[]>(path);
     setTimelineEvents(items);
+  }
+
+  async function loadRunExecutionSummary(runId: number | null) {
+    if (runId === null) {
+      setSelectedRunExecutionSummary(null);
+      return;
+    }
+    try {
+      const summary = await apiGet<WorkflowRunExecutionSummary>(`/workflow-runs/${runId}/execution-summary`);
+      setSelectedRunExecutionSummary(summary);
+    } catch (err) {
+      setSelectedRunExecutionSummary(null);
+      setError((err as Error).message);
+    }
   }
 
   function selectRole(role: RoleRead) {
@@ -1319,7 +1335,7 @@ export function App() {
       setSelectedRunId(created.id);
       setRunDispatchResult(null);
       setRunPartialRerunResult(null);
-      await loadTimelineEvents(created.id, null);
+      await Promise.all([loadTimelineEvents(created.id, null), loadRunExecutionSummary(created.id)]);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -1350,7 +1366,7 @@ export function App() {
       setRunDispatchResult(null);
       setRunPartialRerunResult(null);
       await loadTasks(created.id);
-      await loadTimelineEvents(created.id, null);
+      await Promise.all([loadTimelineEvents(created.id, null), loadRunExecutionSummary(created.id)]);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -1366,7 +1382,7 @@ export function App() {
       setRunDispatchResult(null);
       setRunPartialRerunResult(null);
       await loadWorkflowRuns();
-      await loadTimelineEvents(selectedRunId, null);
+      await Promise.all([loadTimelineEvents(selectedRunId, null), loadRunExecutionSummary(selectedRunId)]);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -1398,7 +1414,10 @@ export function App() {
           setTaskApproval(null);
         }
       }
-      await loadTimelineEvents(selectedRunId, result.task_id);
+      await Promise.all([
+        loadTimelineEvents(selectedRunId, result.task_id),
+        loadRunExecutionSummary(selectedRunId)
+      ]);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -1437,7 +1456,7 @@ export function App() {
           setAudit(null);
         }
       }
-      await loadTimelineEvents(selectedRunId, null);
+      await Promise.all([loadTimelineEvents(selectedRunId, null), loadRunExecutionSummary(selectedRunId)]);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -1446,7 +1465,10 @@ export function App() {
   async function onRefreshTimeline() {
     setError(null);
     try {
-      await loadTimelineEvents(selectedRunId, task?.id ?? null);
+      await Promise.all([
+        loadTimelineEvents(selectedRunId, task?.id ?? null),
+        loadRunExecutionSummary(selectedRunId)
+      ]);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -2133,6 +2155,7 @@ export function App() {
             projectNameById={projectNameById}
             selectedRun={selectedRun}
             selectedRunTasks={selectedRunTasks}
+            selectedRunExecutionSummary={selectedRunExecutionSummary}
             runDispatchResult={runDispatchResult}
             runPartialRerunResult={runPartialRerunResult}
             timelineEvents={timelineEvents}
@@ -2153,6 +2176,7 @@ export function App() {
               setRunPartialRerunResult(null);
               void loadTasks(runId);
               void loadTimelineEvents(runId, null);
+              void loadRunExecutionSummary(runId);
             }}
           />
         )}
