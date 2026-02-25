@@ -93,14 +93,14 @@
 - `TASK-056` (`P0`, `done`): Unified quality gates (code + content)
 - `TASK-057` (`P0`, `done`): Partial re-run engine (failed branches only)
 - `TASK-058` (`P0`, `done`): Process transparency timeline
-- `TASK-059` (`P1`, `todo`): Developer workflow pack (feature/bugfix/release/incident)
+- `TASK-059` (`P1`, `done`): Developer workflow pack (feature/bugfix/release/incident)
 
 
 ### EPIC-11 Local operational readiness
 - `TASK-060` (`P0`, `done`): Local runtime bootstrap & healthpack
 - `TASK-061` (`P0`, `done`): End-to-end local readiness scenarios
 - `TASK-062` (`P1`, `done`): Runbooks for local failure recovery
-- `TASK-063` (`P1`, `todo`): Contract regression suite (summary/gates/timeline)
+- `TASK-063` (`P1`, `done`): Contract regression suite (summary/gates/timeline)
 - `TASK-064` (`P1`, `done`): Local readiness checklist (Go/No-Go)
 
 ## Operating rule

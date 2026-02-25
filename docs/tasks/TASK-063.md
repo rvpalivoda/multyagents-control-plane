@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `todo`
+- Status: `done`
 - Priority: `P1`
 - Owner: `codex`
 - Created: `2026-02-25`
@@ -20,14 +20,16 @@
 
 ## Acceptance criteria
 
-- [ ] Реализовано минимально полезно для ежедневной локальной работы.
-- [ ] Виден прозрачный результат/процесс в UI/API/docs.
-- [ ] Покрыто targeted tests и smoke.
+- [x] Реализовано минимально полезно для ежедневной локальной работы.
+- [x] Виден прозрачный результат/процесс в UI/API/docs.
+- [x] Покрыто targeted tests и smoke.
 
 ## Test plan
 
-- [ ] API/UI tests + локальный smoke-run.
+- [x] API tests + локальный smoke-run.
 
 ## Result
 
-- Commits: `<sha1>`
+- Added `apps/api/tests/test_api_contract_regression.py` to verify additive compatibility for run/summary contracts (gates/timeline/triage fields).
+- Validation: `.venv/bin/pytest -q tests/test_api_contract_regression.py tests/test_api_partial_rerun.py tests/test_api_control_loop.py` -> passed (7).
+- Commits: `<final-sha>`

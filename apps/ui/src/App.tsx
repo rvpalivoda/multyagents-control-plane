@@ -106,6 +106,8 @@ type WorkflowEditorMode = "quick" | "json";
 type WorkflowPresetId =
   | "feature-delivery"
   | "bugfix-fast-lane"
+  | "release-prep-lane"
+  | "incident-hotfix-lane"
   | "docs-research-lane"
   | "article-pipeline"
   | "social-pipeline"
@@ -215,6 +217,54 @@ const WORKFLOW_PRESETS: WorkflowPreset[] = [
         step_id: "verify",
         title: "Run focused regression checks and confirm the bug is resolved.",
         depends_on: ["fix"]
+      }
+    ]
+  },
+  {
+    id: "release-prep-lane",
+    label: "Release prep lane",
+    scenario: "Harden build, verify rollout readiness, and capture release evidence before go-live.",
+    defaultWorkflowName: "release-prep-lane",
+    steps: [
+      { step_id: "freeze", title: "Set release scope freeze and confirm the candidate revision.", depends_on: [] },
+      {
+        step_id: "regression",
+        title: "Run release regression checks and capture blocking defects.",
+        depends_on: ["freeze"]
+      },
+      {
+        step_id: "notes",
+        title: "Prepare release notes, migration highlights, and operator runbook changes.",
+        depends_on: ["regression"]
+      },
+      {
+        step_id: "go-no-go",
+        title: "Review evidence and decide go or no-go with explicit sign-off.",
+        depends_on: ["notes"]
+      }
+    ]
+  },
+  {
+    id: "incident-hotfix-lane",
+    label: "Incident hotfix lane",
+    scenario: "Contain production impact, ship a hotfix, and record follow-up actions quickly.",
+    defaultWorkflowName: "incident-hotfix-lane",
+    steps: [
+      { step_id: "stabilize", title: "Assess impact and apply immediate containment actions.", depends_on: [] },
+      {
+        step_id: "patch",
+        title: "Implement targeted hotfix with the smallest safe change set.",
+        depends_on: ["stabilize"]
+      },
+      {
+        step_id: "validate",
+        title: "Validate service recovery with focused checks and monitoring signals.",
+        depends_on: ["patch"]
+      },
+      {
+        step_id: "follow-up",
+        title: "Capture incident summary, root-cause hypotheses, and next remediation tasks.",
+        depends_on: ["validate"]
       }
     ]
   },

@@ -231,21 +231,48 @@ describe("workflow builder critical flows", () => {
     expect(screen.getByDisplayValue("{")).toBeVisible();
   });
 
-  it("applies built-in preset steps and scenario for bugfix fast lane", async () => {
+  it("applies developer workflow presets in quick create", async () => {
     render(<App />);
     const user = await openWorkflowsTab();
 
-    await user.selectOptions(screen.getByLabelText("Preset"), "bugfix-fast-lane");
-    expect(
-      screen.getByText("Triage, patch, and verify urgent defects with a short delivery path.")
-    ).toBeVisible();
+    const presetCases = [
+      {
+        id: "feature-delivery",
+        scenario: "Plan, implement, test, and review a product increment with explicit quality gates.",
+        workflowName: "feature-delivery",
+        stepIds: ["plan", "implement", "test", "review"]
+      },
+      {
+        id: "bugfix-fast-lane",
+        scenario: "Triage, patch, and verify urgent defects with a short delivery path.",
+        workflowName: "bugfix-fast-lane",
+        stepIds: ["triage", "fix", "verify"]
+      },
+      {
+        id: "release-prep-lane",
+        scenario: "Harden build, verify rollout readiness, and capture release evidence before go-live.",
+        workflowName: "release-prep-lane",
+        stepIds: ["freeze", "regression", "notes", "go-no-go"]
+      },
+      {
+        id: "incident-hotfix-lane",
+        scenario: "Contain production impact, ship a hotfix, and record follow-up actions quickly.",
+        workflowName: "incident-hotfix-lane",
+        stepIds: ["stabilize", "patch", "validate", "follow-up"]
+      }
+    ];
 
-    await user.click(screen.getByRole("button", { name: "Apply preset" }));
+    const workflowNameInput = screen.getByLabelText("Name") as HTMLInputElement;
+    const presetSelect = screen.getByLabelText("Preset");
+    for (const presetCase of presetCases) {
+      await user.selectOptions(presetSelect, presetCase.id);
+      expect(screen.getByText(presetCase.scenario)).toBeVisible();
+      await user.click(screen.getByRole("button", { name: "Apply preset" }));
 
-    const workflowName = screen.getByLabelText("Name") as HTMLInputElement;
-    expect(workflowName.value).toBe("bugfix-fast-lane");
-    const stepIds = (screen.getAllByLabelText("Step id") as HTMLInputElement[]).map((input) => input.value);
-    expect(stepIds).toEqual(["triage", "fix", "verify"]);
+      expect(workflowNameInput.value).toBe(presetCase.workflowName);
+      const stepIds = (screen.getAllByLabelText("Step id") as HTMLInputElement[]).map((input) => input.value);
+      expect(stepIds).toEqual(presetCase.stepIds);
+    }
   });
 
   it("applies article/social/localization presets in quick create", async () => {
@@ -377,6 +404,57 @@ describe("workflow builder critical flows", () => {
         workflow_template_id: 7,
         task_ids: [],
         initiated_by: "ui-workflow-quick-launch"
+      });
+    });
+  });
+
+  it("validates quick launch template ID before dispatch", async () => {
+    const fetchMock = installFetchMock();
+    render(<App />);
+    const user = await openWorkflowsTab();
+
+    const templateIdInput = screen.getByLabelText("Template ID");
+    const launchButton = screen.getByRole("button", { name: "Launch run" });
+    expect(launchButton).toBeDisabled();
+
+    await user.type(templateIdInput, "invalid");
+    expect(await screen.findByText("Template ID must be a number.")).toBeVisible();
+    expect(launchButton).toBeDisabled();
+
+    const runCreateCalls = fetchMock.mock.calls.filter(([request, requestInit]) => {
+      const requestUrl =
+        typeof request === "string" || request instanceof URL ? request.toString() : request.url;
+      const url = new URL(requestUrl, "http://localhost");
+      const method = (requestInit?.method ?? "GET").toUpperCase();
+      return method === "POST" && url.pathname === "/workflow-runs";
+    });
+    expect(runCreateCalls).toHaveLength(0);
+  });
+
+  it("quick launches using manual template ID when no row is selected", async () => {
+    const fetchMock = installFetchMock();
+    render(<App />);
+    const user = await openWorkflowsTab();
+
+    await user.type(screen.getByLabelText("Template ID"), "42");
+    await user.clear(screen.getByLabelText("Initiated by"));
+    await user.type(screen.getByLabelText("Initiated by"), "manual-launch");
+    await user.click(screen.getByRole("button", { name: "Launch run" }));
+
+    await waitFor(() => {
+      const runCreateCall = fetchMock.mock.calls.find(([request, requestInit]) => {
+        const requestUrl =
+          typeof request === "string" || request instanceof URL ? request.toString() : request.url;
+        const url = new URL(requestUrl, "http://localhost");
+        const method = (requestInit?.method ?? "GET").toUpperCase();
+        return method === "POST" && url.pathname === "/workflow-runs";
+      });
+      expect(runCreateCall).toBeDefined();
+      const payload = JSON.parse(String((runCreateCall?.[1] as RequestInit).body));
+      expect(payload).toEqual({
+        workflow_template_id: 42,
+        task_ids: [],
+        initiated_by: "manual-launch"
       });
     });
   });

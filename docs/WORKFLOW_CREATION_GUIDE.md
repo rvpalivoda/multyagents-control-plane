@@ -16,6 +16,8 @@ References:
 The `Workflows` tab now includes built-in presets for common operator + assistant scenarios:
 - `Feature delivery`
 - `Bugfix fast lane`
+- `Release prep lane`
+- `Incident hotfix lane`
 - `Docs / research lane`
 - `Article pipeline`
 - `Social pipeline`
@@ -32,7 +34,24 @@ Notes:
 - If no roles exist yet, preset application is blocked.
 - Presets are applied in `Quick create` mode; manual JSON editing is not required.
 
-### 2.1 Content workflow pack examples
+### 2.1 Developer workflow pack examples
+
+Use these presets for daily engineering delivery:
+
+- `Feature delivery`:
+  - Chain: `plan -> implement -> test -> review`
+  - When to use: normal feature increments where implementation depth and quality evidence both matter.
+- `Bugfix fast lane`:
+  - Chain: `triage -> fix -> verify`
+  - When to use: urgent defects that need a fast but controlled patch cycle.
+- `Release prep lane`:
+  - Chain: `freeze -> regression -> notes -> go-no-go`
+  - When to use: pre-release hardening, release-readiness checks, and coordinated go/no-go decision.
+- `Incident hotfix lane`:
+  - Chain: `stabilize -> patch -> validate -> follow-up`
+  - When to use: production incidents where impact containment and rapid recovery are the top priority.
+
+### 2.2 Content workflow pack examples
 
 Use these presets for multi-agent text production:
 
