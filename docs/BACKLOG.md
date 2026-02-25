@@ -95,6 +95,14 @@
 - `TASK-058` (`P0`, `in_progress`): Process transparency timeline
 - `TASK-059` (`P1`, `todo`): Developer workflow pack (feature/bugfix/release/incident)
 
+
+### EPIC-11 Local operational readiness
+- `TASK-060` (`P0`, `in_progress`): Local runtime bootstrap & healthpack
+- `TASK-061` (`P0`, `in_progress`): End-to-end local readiness scenarios
+- `TASK-062` (`P1`, `in_progress`): Runbooks for local failure recovery
+- `TASK-063` (`P1`, `todo`): Contract regression suite (summary/gates/timeline)
+- `TASK-064` (`P1`, `todo`): Local readiness checklist (Go/No-Go)
+
 ## Operating rule
 
 Before starting implementation, create/update task file from template:
