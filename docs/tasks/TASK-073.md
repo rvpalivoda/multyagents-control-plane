@@ -1,7 +1,7 @@
 # Task 073: Restart persistence invariant tests
 
 ## Metadata
-- Status: `todo`
+- Status: `in_progress`
 - Priority: `P1`
 - Owner: `codex`
 - Created: `2026-02-25`
