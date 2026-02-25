@@ -41,4 +41,4 @@
 - Validation:
   - `apps/api`: `.venv/bin/pytest -q tests/test_api_template_recommendations.py tests/test_api_contract_regression.py tests/test_api_partial_rerun.py` -> passed (9).
   - `apps/ui`: `npm run build` -> passed.
-- Commits: `<final-sha>`
+- Commits: `8693a8b`
