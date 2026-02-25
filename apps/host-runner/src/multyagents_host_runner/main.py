@@ -120,12 +120,18 @@ class RunnerTask(BaseModel):
     stdout: str | None = None
     stderr: str | None = None
     container_id: str | None = None
+    worktree_cleanup_attempted: bool = False
+    worktree_cleanup_succeeded: bool | None = None
+    worktree_cleanup_message: str | None = None
 
 
 app = FastAPI(title="multyagents host runner", version="0.1.0")
 _tasks: dict[str, RunnerTask] = {}
 _cancel_flags: set[str] = set()
 _task_callbacks: dict[str, tuple[str, str | None]] = {}
+_isolated_sessions: dict[str, dict[str, str]] = {}
+_isolated_worktree_owners: dict[str, str] = {}
+_isolated_branch_owners: dict[str, str] = {}
 _task_lock = threading.Lock()
 
 
@@ -150,6 +156,8 @@ def submit(payload: RunnerSubmit) -> RunnerTask:
         updated_at=now,
     )
     with _task_lock:
+        if payload.execution_mode == "isolated-worktree":
+            _reserve_isolated_session_locked(payload.task_id, payload.workspace)
         _tasks[payload.task_id] = task
         _cancel_flags.discard(payload.task_id)
         if payload.status_callback_url is not None:
@@ -193,13 +201,34 @@ def cancel(task_id: str) -> RunnerTask:
         _tasks[task_id] = canceled
         if canceled.execution_mode == "docker-sandbox":
             _stop_docker_container(canceled.container_id)
+    cleanup_attempted: bool | None = None
+    cleanup_succeeded: bool | None = None
+    cleanup_message: str | None = None
     if canceled is not None:
+        if canceled.execution_mode == "isolated-worktree":
+            cleanup_attempted, cleanup_succeeded, cleanup_message = _release_isolated_session(
+                task_id,
+                remove_worktree=True,
+            )
+            if cleanup_attempted:
+                canceled = canceled.model_copy(
+                    update={
+                        "worktree_cleanup_attempted": True,
+                        "worktree_cleanup_succeeded": cleanup_succeeded,
+                        "worktree_cleanup_message": cleanup_message,
+                    }
+                )
+                with _task_lock:
+                    _tasks[task_id] = canceled
         _notify_status(
             task_id,
             status=TaskStatus.CANCELED,
             message=canceled.message,
             finished_at=canceled.finished_at,
             container_id=canceled.container_id,
+            worktree_cleanup_attempted=cleanup_attempted,
+            worktree_cleanup_succeeded=cleanup_succeeded,
+            worktree_cleanup_message=cleanup_message,
         )
         with _task_lock:
             _task_callbacks.pop(task_id, None)
@@ -239,25 +268,37 @@ def _run_task(payload: RunnerSubmit) -> None:
         started_at=running.started_at,
         container_id=running.container_id,
     )
-    if _is_canceled(payload.task_id):
-        return
+    cleanup_attempted: bool | None = None
+    cleanup_succeeded: bool | None = None
+    cleanup_message: str | None = None
 
-    execution_cwd = payload.workspace.project_root if payload.workspace is not None else None
-    cleanup_info: tuple[str, str] | None = None
+    try:
+        if _is_canceled(payload.task_id):
+            return
 
-    if payload.execution_mode == "isolated-worktree":
-        setup = _setup_isolated_worktree(payload)
-        if setup["ok"] is not True:
-            result = {
-                "status": TaskStatus.FAILED,
-                "message": setup["message"],
-                "exit_code": setup.get("exit_code"),
-                "stdout": setup.get("stdout"),
-                "stderr": setup.get("stderr"),
-            }
+        execution_cwd = payload.workspace.project_root if payload.workspace is not None else None
+        if payload.execution_mode == "isolated-worktree":
+            setup = _setup_isolated_worktree(payload)
+            if setup["ok"] is not True:
+                result = {
+                    "status": TaskStatus.FAILED,
+                    "message": setup["message"],
+                    "exit_code": setup.get("exit_code"),
+                    "stdout": setup.get("stdout"),
+                    "stderr": setup.get("stderr"),
+                }
+            else:
+                execution_cwd = str(setup["cwd"])
+                executor = _executor_mode()
+                if executor == "shell":
+                    result = _execute_shell(payload, execution_cwd)
+                elif executor == "codex":
+                    result = _execute_codex(payload, execution_cwd)
+                else:
+                    result = _execute_mock(payload)
+        elif payload.execution_mode == "docker-sandbox":
+            result = _execute_docker_sandbox(payload, container_id=container_id)
         else:
-            execution_cwd = str(setup["cwd"])
-            cleanup_info = (payload.workspace.project_root, str(setup["cwd"]))
             executor = _executor_mode()
             if executor == "shell":
                 result = _execute_shell(payload, execution_cwd)
@@ -265,52 +306,64 @@ def _run_task(payload: RunnerSubmit) -> None:
                 result = _execute_codex(payload, execution_cwd)
             else:
                 result = _execute_mock(payload)
-    elif payload.execution_mode == "docker-sandbox":
-        result = _execute_docker_sandbox(payload, container_id=container_id)
-    else:
-        executor = _executor_mode()
-        if executor == "shell":
-            result = _execute_shell(payload, execution_cwd)
-        elif executor == "codex":
-            result = _execute_codex(payload, execution_cwd)
-        else:
-            result = _execute_mock(payload)
 
-    with _task_lock:
-        current = _tasks.get(payload.task_id)
-        if current is None:
-            return
-        if current.status == TaskStatus.CANCELED:
-            return
+        with _task_lock:
+            current = _tasks.get(payload.task_id)
+            if current is None:
+                return
+            if current.status == TaskStatus.CANCELED:
+                return
 
-        final = current.model_copy(
-            update={
-                "status": result["status"],
-                "message": result["message"],
-                "updated_at": _utc_now(),
-                "finished_at": _utc_now(),
-                "exit_code": result.get("exit_code"),
-                "stdout": result.get("stdout"),
-                "stderr": result.get("stderr"),
-                "container_id": result.get("container_id", current.container_id),
-            }
+            final = current.model_copy(
+                update={
+                    "status": result["status"],
+                    "message": result["message"],
+                    "updated_at": _utc_now(),
+                    "finished_at": _utc_now(),
+                    "exit_code": result.get("exit_code"),
+                    "stdout": result.get("stdout"),
+                    "stderr": result.get("stderr"),
+                    "container_id": result.get("container_id", current.container_id),
+                }
+            )
+            _tasks[payload.task_id] = final
+
+        if payload.execution_mode == "isolated-worktree":
+            cleanup_attempted, cleanup_succeeded, cleanup_message = _release_isolated_session(
+                payload.task_id,
+                remove_worktree=True,
+            )
+            if cleanup_attempted:
+                final = final.model_copy(
+                    update={
+                        "worktree_cleanup_attempted": True,
+                        "worktree_cleanup_succeeded": cleanup_succeeded,
+                        "worktree_cleanup_message": cleanup_message,
+                    }
+                )
+                with _task_lock:
+                    if payload.task_id in _tasks:
+                        _tasks[payload.task_id] = final
+
+        _notify_status(
+            payload.task_id,
+            status=final.status,
+            message=final.message,
+            started_at=final.started_at,
+            finished_at=final.finished_at,
+            exit_code=final.exit_code,
+            stdout=final.stdout,
+            stderr=final.stderr,
+            container_id=final.container_id,
+            worktree_cleanup_attempted=cleanup_attempted,
+            worktree_cleanup_succeeded=cleanup_succeeded,
+            worktree_cleanup_message=cleanup_message,
         )
-        _tasks[payload.task_id] = final
-    _notify_status(
-        payload.task_id,
-        status=final.status,
-        message=final.message,
-        started_at=final.started_at,
-        finished_at=final.finished_at,
-        exit_code=final.exit_code,
-        stdout=final.stdout,
-        stderr=final.stderr,
-        container_id=final.container_id,
-    )
-    if cleanup_info is not None:
-        _cleanup_isolated_worktree(repo_root=cleanup_info[0], worktree_path=cleanup_info[1])
-    with _task_lock:
-        _task_callbacks.pop(payload.task_id, None)
+    finally:
+        if payload.execution_mode == "isolated-worktree":
+            _release_isolated_session(payload.task_id, remove_worktree=True)
+        with _task_lock:
+            _task_callbacks.pop(payload.task_id, None)
 
 
 def _execute_mock(payload: RunnerSubmit) -> dict[str, object]:
@@ -519,6 +572,59 @@ def _execute_codex(payload: RunnerSubmit, cwd: str | None) -> dict[str, object]:
         }
 
 
+def _reserve_isolated_session_locked(task_id: str, workspace: RunnerWorkspace | None) -> None:
+    if workspace is None or workspace.worktree_path is None or workspace.git_branch is None:
+        raise HTTPException(
+            status_code=422,
+            detail="isolated-worktree requires workspace.worktree_path and workspace.git_branch",
+        )
+
+    worktree_path = str(Path(workspace.worktree_path))
+    git_branch = workspace.git_branch
+    worktree_owner = _isolated_worktree_owners.get(worktree_path)
+    if worktree_owner is not None and worktree_owner != task_id:
+        raise HTTPException(
+            status_code=409,
+            detail=f"isolated-worktree collision: worktree '{worktree_path}' is already reserved by task {worktree_owner}",
+        )
+
+    branch_owner = _isolated_branch_owners.get(git_branch)
+    if branch_owner is not None and branch_owner != task_id:
+        raise HTTPException(
+            status_code=409,
+            detail=f"isolated-worktree collision: branch '{git_branch}' is already reserved by task {branch_owner}",
+        )
+
+    _isolated_sessions[task_id] = {
+        "project_root": workspace.project_root,
+        "worktree_path": worktree_path,
+        "git_branch": git_branch,
+    }
+    _isolated_worktree_owners[worktree_path] = task_id
+    _isolated_branch_owners[git_branch] = task_id
+
+
+def _release_isolated_session(task_id: str, *, remove_worktree: bool) -> tuple[bool | None, bool | None, str | None]:
+    with _task_lock:
+        session = _isolated_sessions.pop(task_id, None)
+        if session is not None:
+            if _isolated_worktree_owners.get(session["worktree_path"]) == task_id:
+                del _isolated_worktree_owners[session["worktree_path"]]
+            if _isolated_branch_owners.get(session["git_branch"]) == task_id:
+                del _isolated_branch_owners[session["git_branch"]]
+
+    if session is None:
+        return None, None, None
+    if not remove_worktree:
+        return False, None, None
+
+    cleanup_succeeded, cleanup_message = _cleanup_isolated_worktree(
+        repo_root=session["project_root"],
+        worktree_path=session["worktree_path"],
+    )
+    return True, cleanup_succeeded, cleanup_message
+
+
 def _setup_isolated_worktree(payload: RunnerSubmit) -> dict[str, object]:
     if payload.workspace is None or payload.workspace.worktree_path is None or payload.workspace.git_branch is None:
         return {
@@ -534,6 +640,66 @@ def _setup_isolated_worktree(payload: RunnerSubmit) -> dict[str, object]:
     git_branch = payload.workspace.git_branch
     Path(worktree_path).parent.mkdir(parents=True, exist_ok=True)
 
+    git_branch_ref = f"refs/heads/{git_branch}"
+    try:
+        listed = subprocess.run(
+            [
+                "git",
+                "-C",
+                repo_root,
+                "worktree",
+                "list",
+                "--porcelain",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "message": "isolated worktree setup failed",
+            "exit_code": None,
+            "stdout": None,
+            "stderr": str(exc),
+        }
+
+    if listed.returncode != 0:
+        return {
+            "ok": False,
+            "message": "isolated worktree setup failed",
+            "exit_code": listed.returncode,
+            "stdout": listed.stdout,
+            "stderr": listed.stderr,
+        }
+
+    active_worktree: str | None = None
+    active_branch: str | None = None
+    for line in listed.stdout.splitlines():
+        if line.startswith("worktree "):
+            active_worktree = line[len("worktree ") :].strip()
+            active_branch = None
+            if active_worktree == worktree_path:
+                return {
+                    "ok": False,
+                    "message": "isolated worktree setup failed",
+                    "exit_code": 1,
+                    "stdout": listed.stdout,
+                    "stderr": f"worktree path already in use: {worktree_path}",
+                }
+            continue
+        if line.startswith("branch "):
+            active_branch = line[len("branch ") :].strip()
+            if active_branch == git_branch_ref and active_worktree is not None and active_worktree != worktree_path:
+                return {
+                    "ok": False,
+                    "message": "isolated worktree setup failed",
+                    "exit_code": 1,
+                    "stdout": listed.stdout,
+                    "stderr": f"branch already checked out in another worktree: {git_branch}",
+                }
+
     try:
         completed = subprocess.run(
             [
@@ -542,7 +708,6 @@ def _setup_isolated_worktree(payload: RunnerSubmit) -> dict[str, object]:
                 repo_root,
                 "worktree",
                 "add",
-                "--force",
                 "-B",
                 git_branch,
                 worktree_path,
@@ -577,13 +742,13 @@ def _setup_isolated_worktree(payload: RunnerSubmit) -> dict[str, object]:
     }
 
 
-def _cleanup_isolated_worktree(*, repo_root: str, worktree_path: str) -> None:
+def _cleanup_isolated_worktree(*, repo_root: str, worktree_path: str) -> tuple[bool | None, str | None]:
     cleanup_enabled = os.getenv("HOST_RUNNER_CLEANUP_WORKTREE", "true").lower() != "false"
     if not cleanup_enabled:
-        return
+        return None, "worktree cleanup disabled by configuration"
 
     try:
-        subprocess.run(
+        completed = subprocess.run(
             [
                 "git",
                 "-C",
@@ -598,8 +763,14 @@ def _cleanup_isolated_worktree(*, repo_root: str, worktree_path: str) -> None:
             timeout=120,
             check=False,
         )
-    except Exception:  # noqa: BLE001
-        return
+    except Exception as exc:  # noqa: BLE001
+        return False, str(exc)
+    if completed.returncode != 0:
+        return (
+            False,
+            completed.stderr or completed.stdout or f"git worktree remove failed for {worktree_path}",
+        )
+    return True, None
 
 
 def _executor_mode() -> str:
@@ -657,6 +828,9 @@ def _notify_status(
     stdout: str | None = None,
     stderr: str | None = None,
     container_id: str | None = None,
+    worktree_cleanup_attempted: bool | None = None,
+    worktree_cleanup_succeeded: bool | None = None,
+    worktree_cleanup_message: str | None = None,
 ) -> None:
     with _task_lock:
         callback = _task_callbacks.get(task_id)
@@ -673,6 +847,9 @@ def _notify_status(
         "stdout": stdout,
         "stderr": stderr,
         "container_id": container_id,
+        "worktree_cleanup_attempted": worktree_cleanup_attempted,
+        "worktree_cleanup_succeeded": worktree_cleanup_succeeded,
+        "worktree_cleanup_message": worktree_cleanup_message,
     }
     headers: dict[str, str] = {}
     if token:

@@ -121,3 +121,67 @@ def test_runner_status_callback_requires_token_when_configured(monkeypatch) -> N
     )
     assert authorized.status_code == 200
     assert authorized.json()["status"] == "running"
+
+
+def test_runner_status_callback_updates_isolated_worktree_cleanup_audit(monkeypatch) -> None:
+    class _SuccessResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, str]:
+            return {"status": "queued"}
+
+    def fake_post(*args, **kwargs):  # noqa: ANN002, ANN003
+        return _SuccessResponse()
+
+    monkeypatch.setenv("HOST_RUNNER_URL", "http://runner.test")
+    monkeypatch.setattr("multyagents_api.runner_client.httpx.post", fake_post)
+
+    role_id = _create_role("runner-isolated-cleanup-role")
+    project_id = _create_project(
+        name="runner-isolated-cleanup-project",
+        root_path="/tmp/multyagents/runner-isolated-cleanup",
+        allowed_path="/tmp/multyagents/runner-isolated-cleanup/src",
+    )
+
+    created = client.post(
+        "/tasks",
+        json={
+            "role_id": role_id,
+            "title": "isolated cleanup task",
+            "context7_mode": "inherit",
+            "execution_mode": "isolated-worktree",
+            "project_id": project_id,
+        },
+    )
+    assert created.status_code == 200
+    task_id = created.json()["id"]
+
+    dispatched = client.post(f"/tasks/{task_id}/dispatch")
+    assert dispatched.status_code == 200
+
+    success = client.post(
+        f"/runner/tasks/{task_id}/status",
+        json={
+            "status": "success",
+            "message": "isolated done",
+            "exit_code": 0,
+            "worktree_cleanup_attempted": True,
+            "worktree_cleanup_succeeded": True,
+            "worktree_cleanup_message": None,
+        },
+    )
+    assert success.status_code == 200
+    assert success.json()["status"] == "success"
+
+    audit = client.get(f"/tasks/{task_id}/audit")
+    assert audit.status_code == 200
+    body = audit.json()
+    assert body["worktree_cleanup_attempted"] is True
+    assert body["worktree_cleanup_succeeded"] is True
+    assert body["worktree_cleanup_message"] is None
+    assert body["worktree_cleanup_at"] is not None
+
+    released = client.get(f"/events?task_id={task_id}&event_type=task.worktree_session_released&limit=20")
+    assert released.status_code == 200
+    assert any(item["payload"].get("reason") == "runner-status-success" for item in released.json())

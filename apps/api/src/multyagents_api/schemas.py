@@ -229,6 +229,7 @@ class SandboxConfig(BaseModel):
 
 class RunnerSubmitPayload(BaseModel):
     task_id: int
+    run_id: int | None = None
     role_id: int
     title: str
     execution_mode: ExecutionMode
@@ -279,6 +280,9 @@ class RunnerStatusUpdate(BaseModel):
     stdout: str | None = None
     stderr: str | None = None
     container_id: str | None = None
+    worktree_cleanup_attempted: bool | None = None
+    worktree_cleanup_succeeded: bool | None = None
+    worktree_cleanup_message: str | None = None
 
 
 class TaskAudit(BaseModel):
@@ -290,8 +294,16 @@ class TaskAudit(BaseModel):
     execution_mode: ExecutionMode
     requires_approval: bool = False
     approval_status: ApprovalStatus | None = None
+    workflow_run_id: int | None = None
+    task_run_id: str | None = None
     project_id: int | None = None
     lock_paths: list[str] = Field(default_factory=list)
+    worktree_path: str | None = None
+    git_branch: str | None = None
+    worktree_cleanup_attempted: bool = False
+    worktree_cleanup_succeeded: bool | None = None
+    worktree_cleanup_message: str | None = None
+    worktree_cleanup_at: str | None = None
     sandbox_image: str | None = None
     sandbox_workdir: str | None = None
     sandbox_container_id: str | None = None

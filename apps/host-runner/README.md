@@ -23,10 +23,12 @@ Execution mode:
   - `worktree_path`
   - `git_branch`
 - runner performs:
-  - `git worktree add --force -B <git_branch> <worktree_path> HEAD`
+  - collision pre-check via `git worktree list --porcelain`
+  - `git worktree add -B <git_branch> <worktree_path> HEAD`
   - executes task in `<worktree_path>`
-  - `git worktree remove --force <worktree_path>` after completion
+  - `git worktree remove --force <worktree_path>` after completion/cancel/failure
 - cleanup can be disabled with `HOST_RUNNER_CLEANUP_WORKTREE=false`
+- submit rejects active branch/worktree collisions with HTTP `409`
 
 `docker-sandbox` mode support:
 - submit payload must include `sandbox`:
@@ -43,4 +45,8 @@ Runner callback integration:
   - `status_callback_token`
 - runner emits callback updates on `running`, `success`, `failed`, `canceled`.
 - callback payload also includes optional `container_id` for docker-sandbox tasks.
+- isolated-worktree terminal callbacks include optional cleanup metadata:
+  - `worktree_cleanup_attempted`
+  - `worktree_cleanup_succeeded`
+  - `worktree_cleanup_message`
 - callback header is `X-Runner-Token` when token is provided.

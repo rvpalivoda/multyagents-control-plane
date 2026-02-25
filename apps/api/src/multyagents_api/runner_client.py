@@ -26,7 +26,7 @@ def submit_to_runner(payload: RunnerSubmitPayload) -> RunnerSubmission:
 
     request_payload = {
         "task_id": str(payload.task_id),
-        "run_id": f"run-{payload.task_id}",
+        "run_id": f"run-{payload.run_id}" if payload.run_id is not None else f"task-{payload.task_id}",
         "prompt": payload.title,
         "execution_mode": payload.execution_mode.value,
         "timeout_seconds": 600,

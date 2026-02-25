@@ -133,6 +133,17 @@ class _ApprovalRecord:
     comment: str | None
 
 
+@dataclass
+class _IsolatedSessionRecord:
+    task_id: int
+    run_id: int | None
+    task_run_id: str
+    project_id: int
+    project_root: str
+    worktree_path: str
+    git_branch: str
+
+
 class InMemoryStore:
     def __init__(self, state_file: str | None = None) -> None:
         self._state_file = Path(state_file).expanduser() if state_file else None
@@ -148,6 +159,9 @@ class InMemoryStore:
         self._task_latest_run: dict[int, int] = {}
         self._approvals: dict[int, _ApprovalRecord] = {}
         self._task_approval: dict[int, int] = {}
+        self._isolated_sessions: dict[int, _IsolatedSessionRecord] = {}
+        self._isolated_worktree_locks: dict[str, int] = {}
+        self._isolated_branch_locks: dict[str, int] = {}
         self._audits: dict[int, TaskAudit] = {}
         self._events: list[EventRead] = []
         self._artifacts: list[ArtifactRead] = []
@@ -744,8 +758,11 @@ class InMemoryStore:
 
     def dispatch_task(self, task_id: int, *, consumed_artifact_ids: list[int] | None = None) -> DispatchResponse:
         task = self.get_task(task_id)
+        if task.status not in (TaskStatus.CREATED, TaskStatus.SUBMIT_FAILED):
+            raise ConflictError(f"task {task_id} is not dispatchable from status '{task.status.value}'")
         role = self.get_role(task.role_id)
         run_id = self._task_latest_run.get(task.id)
+        task_run_id = self._task_run_id(task.id, run_id)
         resolved = resolve_context7_enabled(
             role_context7_enabled=role.context7_enabled,
             task_mode=task.context7_mode,
@@ -760,7 +777,7 @@ class InMemoryStore:
             self._acquire_shared_workspace(task_id=task.id, project_id=task.project_id, lock_paths=task.lock_paths)
             if task.execution_mode == ExecutionMode.SHARED_WORKSPACE
             else (
-                self._build_isolated_workspace(task_id=task.id, project_id=task.project_id)
+                self._acquire_isolated_workspace(task_id=task.id, run_id=run_id, project_id=task.project_id)
                 if task.execution_mode == ExecutionMode.ISOLATED_WORKTREE
                 else (
                     self._build_docker_workspace(project_id=task.project_id)
@@ -777,6 +794,7 @@ class InMemoryStore:
 
         payload = RunnerSubmitPayload(
             task_id=task.id,
+            run_id=run_id,
             role_id=task.role_id,
             title=task.title,
             execution_mode=task.execution_mode,
@@ -798,8 +816,16 @@ class InMemoryStore:
             execution_mode=task.execution_mode,
             requires_approval=task.requires_approval,
             approval_status=approval_status,
+            workflow_run_id=run_id,
+            task_run_id=task_run_id,
             project_id=task.project_id,
             lock_paths=task.lock_paths,
+            worktree_path=workspace.worktree_path if workspace is not None else None,
+            git_branch=workspace.git_branch if workspace is not None else None,
+            worktree_cleanup_attempted=False,
+            worktree_cleanup_succeeded=None,
+            worktree_cleanup_message=None,
+            worktree_cleanup_at=None,
             sandbox_image=sandbox.image if sandbox is not None else None,
             sandbox_workdir=sandbox.workdir if sandbox is not None else None,
             sandbox_container_id=None,
@@ -823,6 +849,9 @@ class InMemoryStore:
                 "context7_enabled": resolved,
                 "requires_approval": task.requires_approval,
                 "consumed_artifact_ids": consumed_artifact_ids,
+                "task_run_id": task_run_id,
+                "worktree_path": workspace.worktree_path if workspace is not None else None,
+                "git_branch": workspace.git_branch if workspace is not None else None,
             },
         )
         if run_id is not None:
@@ -860,6 +889,17 @@ class InMemoryStore:
                 self._audits[task_id] = audit
             released_paths = self._release_task_locks_internal(task_id=task_id, run_id=run_id, emit_event=True)
             event_payload["released_paths"] = released_paths
+            released_session = self._release_isolated_session_internal(
+                task_id=task_id,
+                run_id=run_id,
+                reason="runner-submit-failed",
+                cleanup_attempted=False,
+                cleanup_succeeded=None,
+                cleanup_message="runner submission failed before execution",
+            )
+            if released_session is not None:
+                event_payload["released_worktree_path"] = released_session.worktree_path
+                event_payload["released_git_branch"] = released_session.git_branch
             event_type = "task.runner_submit_failed"
 
         self._tasks[task_id] = record
@@ -895,6 +935,17 @@ class InMemoryStore:
                 record.status = TaskStatus.CANCELED.value
                 released_paths = self._release_task_locks_internal(task_id=task_id, run_id=run_id, emit_event=True)
                 event_payload["released_paths"] = released_paths
+                released_session = self._release_isolated_session_internal(
+                    task_id=task_id,
+                    run_id=run_id,
+                    reason="cancel-requested",
+                    cleanup_attempted=False,
+                    cleanup_succeeded=None,
+                    cleanup_message="cancel accepted by runner",
+                )
+                if released_session is not None:
+                    event_payload["released_worktree_path"] = released_session.worktree_path
+                    event_payload["released_git_branch"] = released_session.git_branch
             else:
                 record.status = TaskStatus.CANCEL_REQUESTED.value
             record.runner_message = submission.message or "cancel requested"
@@ -927,6 +978,9 @@ class InMemoryStore:
         stdout: str | None = None,
         stderr: str | None = None,
         container_id: str | None = None,
+        worktree_cleanup_attempted: bool | None = None,
+        worktree_cleanup_succeeded: bool | None = None,
+        worktree_cleanup_message: str | None = None,
     ) -> TaskRead:
         record = self._tasks.get(task_id)
         if record is None:
@@ -966,16 +1020,45 @@ class InMemoryStore:
             if status in (RunnerLifecycleStatus.FAILED, RunnerLifecycleStatus.CANCELED) and message is not None:
                 audit.sandbox_error = message
             self._audits[task_id] = audit
+        elif audit is not None and audit.execution_mode == ExecutionMode.ISOLATED_WORKTREE:
+            has_cleanup_update = (
+                worktree_cleanup_attempted is not None
+                or worktree_cleanup_succeeded is not None
+                or worktree_cleanup_message is not None
+            )
+            if worktree_cleanup_attempted is not None:
+                audit.worktree_cleanup_attempted = worktree_cleanup_attempted
+            if worktree_cleanup_succeeded is not None:
+                audit.worktree_cleanup_succeeded = worktree_cleanup_succeeded
+            if worktree_cleanup_message is not None:
+                audit.worktree_cleanup_message = worktree_cleanup_message
+            if has_cleanup_update:
+                audit.worktree_cleanup_at = self._utc_now()
+            self._audits[task_id] = audit
 
         event_payload: dict[str, Any] = {
             "status": status.value,
             "message": message,
             "exit_code": exit_code,
             "container_id": container_id,
+            "worktree_cleanup_attempted": worktree_cleanup_attempted,
+            "worktree_cleanup_succeeded": worktree_cleanup_succeeded,
+            "worktree_cleanup_message": worktree_cleanup_message,
         }
         if is_terminal:
             released_paths = self._release_task_locks_internal(task_id=task_id, run_id=run_id, emit_event=True)
             event_payload["released_paths"] = released_paths
+            released_session = self._release_isolated_session_internal(
+                task_id=task_id,
+                run_id=run_id,
+                reason=f"runner-status-{status.value}",
+                cleanup_attempted=worktree_cleanup_attempted,
+                cleanup_succeeded=worktree_cleanup_succeeded,
+                cleanup_message=worktree_cleanup_message,
+            )
+            if released_session is not None:
+                event_payload["released_worktree_path"] = released_session.worktree_path
+                event_payload["released_git_branch"] = released_session.git_branch
         self._append_event(
             event_type="task.runner_status_updated",
             run_id=run_id,
@@ -1213,7 +1296,31 @@ class InMemoryStore:
             lock_paths=normalized_paths,
         )
 
-    def _build_isolated_workspace(self, *, task_id: int, project_id: int | None) -> RunnerWorkspaceContext:
+    @staticmethod
+    def _task_run_id(task_id: int, run_id: int | None) -> str:
+        if run_id is None:
+            return f"standalone:task-{task_id}"
+        return f"run-{run_id}:task-{task_id}"
+
+    def _build_isolated_session_identifiers(
+        self,
+        *,
+        project_root: Path,
+        task_id: int,
+        run_id: int | None,
+    ) -> tuple[Path, str]:
+        run_segment = f"run-{run_id}" if run_id is not None else "standalone"
+        worktree_path = project_root / ".multyagents" / "worktrees" / run_segment / f"task-{task_id}"
+        git_branch = f"multyagents/{run_segment}/task-{task_id}"
+        return worktree_path, git_branch
+
+    def _acquire_isolated_workspace(
+        self,
+        *,
+        task_id: int,
+        run_id: int | None,
+        project_id: int | None,
+    ) -> RunnerWorkspaceContext:
         if project_id is None:
             raise ValidationError("isolated-worktree task must define project_id")
         project = self._projects.get(project_id)
@@ -1221,15 +1328,109 @@ class InMemoryStore:
             raise NotFoundError(f"project {project_id} not found")
 
         project_root = Path(project.root_path).resolve()
-        worktree_path = project_root / ".multyagents" / "worktrees" / f"task-{task_id}"
-        git_branch = f"multyagents/task-{task_id}"
+        worktree_path, git_branch = self._build_isolated_session_identifiers(
+            project_root=project_root,
+            task_id=task_id,
+            run_id=run_id,
+        )
+        locked_worktree_owner = self._isolated_worktree_locks.get(str(worktree_path))
+        if locked_worktree_owner is not None and locked_worktree_owner != task_id:
+            raise ConflictError(
+                f"isolated-worktree collision: worktree '{worktree_path}' is reserved by task {locked_worktree_owner}"
+            )
+        locked_branch_owner = self._isolated_branch_locks.get(git_branch)
+        if locked_branch_owner is not None and locked_branch_owner != task_id:
+            raise ConflictError(
+                f"isolated-worktree collision: branch '{git_branch}' is reserved by task {locked_branch_owner}"
+            )
+
+        task_run_id = self._task_run_id(task_id, run_id)
+        session = _IsolatedSessionRecord(
+            task_id=task_id,
+            run_id=run_id,
+            task_run_id=task_run_id,
+            project_id=project.id,
+            project_root=str(project_root),
+            worktree_path=str(worktree_path),
+            git_branch=git_branch,
+        )
+        self._isolated_sessions[task_id] = session
+        self._isolated_worktree_locks[session.worktree_path] = task_id
+        self._isolated_branch_locks[session.git_branch] = task_id
+        self._append_event(
+            event_type="task.worktree_session_reserved",
+            run_id=run_id,
+            task_id=task_id,
+            payload={
+                "task_run_id": task_run_id,
+                "worktree_path": session.worktree_path,
+                "git_branch": session.git_branch,
+            },
+        )
         return RunnerWorkspaceContext(
             project_id=project.id,
             project_root=str(project_root),
             lock_paths=[],
-            worktree_path=str(worktree_path),
-            git_branch=git_branch,
+            worktree_path=session.worktree_path,
+            git_branch=session.git_branch,
         )
+
+    def _release_isolated_session_internal(
+        self,
+        *,
+        task_id: int,
+        run_id: int | None,
+        reason: str,
+        cleanup_attempted: bool | None,
+        cleanup_succeeded: bool | None,
+        cleanup_message: str | None,
+    ) -> _IsolatedSessionRecord | None:
+        session = self._isolated_sessions.pop(task_id, None)
+        if session is not None:
+            if self._isolated_worktree_locks.get(session.worktree_path) == task_id:
+                del self._isolated_worktree_locks[session.worktree_path]
+            if self._isolated_branch_locks.get(session.git_branch) == task_id:
+                del self._isolated_branch_locks[session.git_branch]
+
+        audit = self._audits.get(task_id)
+        if audit is not None and audit.execution_mode == ExecutionMode.ISOLATED_WORKTREE:
+            has_cleanup_update = (
+                cleanup_attempted is not None
+                or cleanup_succeeded is not None
+                or cleanup_message is not None
+            )
+            if cleanup_attempted is not None:
+                audit.worktree_cleanup_attempted = cleanup_attempted
+            if cleanup_succeeded is not None:
+                audit.worktree_cleanup_succeeded = cleanup_succeeded
+            if cleanup_message is not None:
+                audit.worktree_cleanup_message = cleanup_message
+            if has_cleanup_update:
+                audit.worktree_cleanup_at = self._utc_now()
+            self._audits[task_id] = audit
+
+        if session is None:
+            return None
+
+        self._append_event(
+            event_type="task.worktree_session_released",
+            run_id=run_id if run_id is not None else session.run_id,
+            task_id=task_id,
+            payload={
+                "task_run_id": session.task_run_id,
+                "worktree_path": session.worktree_path,
+                "git_branch": session.git_branch,
+                "reason": reason,
+                "cleanup_attempted": cleanup_attempted,
+                "cleanup_succeeded": cleanup_succeeded,
+                "cleanup_message": cleanup_message,
+            },
+        )
+        return session
+
+    def _build_isolated_workspace(self, *, task_id: int, project_id: int | None) -> RunnerWorkspaceContext:
+        # Deprecated for new dispatch flow; retained for backward-compatible tests/helpers.
+        return self._acquire_isolated_workspace(task_id=task_id, run_id=None, project_id=project_id)
 
     def _build_docker_workspace(self, *, project_id: int | None) -> RunnerWorkspaceContext:
         if project_id is None:
@@ -1552,6 +1753,16 @@ class InMemoryStore:
             int(key): [str(item) for item in value]
             for key, value in data.get("task_locks", {}).items()
         }
+        self._isolated_sessions = {
+            int(key): _IsolatedSessionRecord(**value)
+            for key, value in data.get("isolated_sessions", {}).items()
+        }
+        self._isolated_worktree_locks = {
+            str(key): int(value) for key, value in data.get("isolated_worktree_locks", {}).items()
+        }
+        self._isolated_branch_locks = {
+            str(key): int(value) for key, value in data.get("isolated_branch_locks", {}).items()
+        }
         self._workflow_templates = {
             int(key): _WorkflowTemplateRecord(
                 id=int(value["id"]),
@@ -1613,6 +1824,9 @@ class InMemoryStore:
             "tasks": {str(key): value.__dict__ for key, value in self._tasks.items()},
             "path_locks": self._path_locks,
             "task_locks": {str(key): value for key, value in self._task_locks.items()},
+            "isolated_sessions": {str(key): value.__dict__ for key, value in self._isolated_sessions.items()},
+            "isolated_worktree_locks": self._isolated_worktree_locks,
+            "isolated_branch_locks": self._isolated_branch_locks,
             "workflow_templates": {
                 str(key): {
                     "id": value.id,

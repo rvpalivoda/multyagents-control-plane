@@ -20,6 +20,12 @@ Includes isolated-worktree support:
 - dispatch payload includes workspace metadata:
   - `worktree_path`
   - `git_branch`
+- worktree sessions are run-aware and tracked in task audit:
+  - `workflow_run_id`
+  - `task_run_id`
+  - `worktree_path`
+  - `git_branch`
+  - `worktree_cleanup_*` fields from runner callbacks
 
 Includes docker-sandbox support:
 - `execution_mode=docker-sandbox` requires:

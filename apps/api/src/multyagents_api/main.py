@@ -440,6 +440,9 @@ def update_runner_status(
             stdout=payload.stdout,
             stderr=payload.stderr,
             container_id=payload.container_id,
+            worktree_cleanup_attempted=payload.worktree_cleanup_attempted,
+            worktree_cleanup_succeeded=payload.worktree_cleanup_succeeded,
+            worktree_cleanup_message=payload.worktree_cleanup_message,
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

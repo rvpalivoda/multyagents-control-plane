@@ -34,6 +34,7 @@ function jsonResponse(payload: unknown, status = 200): Response {
 
 function installFetchMock(overrides: Record<string, unknown> = {}) {
   const getPayloads = { ...DEFAULT_GET_PAYLOADS, ...overrides };
+  let workflowRuns = Array.isArray(getPayloads["/workflow-runs"]) ? [...(getPayloads["/workflow-runs"] as unknown[])] : [];
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const method = (init?.method ?? "GET").toUpperCase();
@@ -48,6 +49,21 @@ function installFetchMock(overrides: Record<string, unknown> = {}) {
       }
       if (path in getPayloads) {
         return jsonResponse(getPayloads[path]);
+      }
+    }
+
+    if (method === "POST") {
+      if (path === "/workflow-runs") {
+        const payload = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
+        const created = {
+          id: workflowRuns.length + 1,
+          status: "created",
+          workflow_template_id: payload.workflow_template_id ?? null,
+          task_ids: Array.isArray(payload.task_ids) ? payload.task_ids : [],
+          updated_at: "2026-02-25T00:00:00Z"
+        };
+        workflowRuns = [created, ...workflowRuns];
+        return jsonResponse(created);
       }
     }
 
@@ -170,5 +186,61 @@ describe("workflow builder critical flows", () => {
       await screen.findByText(/Steps JSON must be valid before switching to Quick create\./)
     ).toBeVisible();
     expect(screen.getByDisplayValue("{")).toBeVisible();
+  });
+
+  it("applies built-in preset steps and scenario for bugfix fast lane", async () => {
+    render(<App />);
+    const user = await openWorkflowsTab();
+
+    await user.selectOptions(screen.getByLabelText("Preset"), "bugfix-fast-lane");
+    expect(
+      screen.getByText("Triage, patch, and verify urgent defects with a short delivery path.")
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Apply preset" }));
+
+    const workflowName = screen.getByLabelText("Name") as HTMLInputElement;
+    expect(workflowName.value).toBe("bugfix-fast-lane");
+    const stepIds = (screen.getAllByLabelText("Step id") as HTMLInputElement[]).map((input) => input.value);
+    expect(stepIds).toEqual(["triage", "fix", "verify"]);
+  });
+
+  it("quick launches a run from workflows tab with minimal fields", async () => {
+    const fetchMock = installFetchMock({
+      "/workflow-templates": [
+        {
+          id: 7,
+          name: "feature-delivery",
+          project_id: null,
+          steps: [
+            { step_id: "plan", role_id: 1, title: "Plan", depends_on: [] },
+            { step_id: "build", role_id: 1, title: "Build", depends_on: ["plan"] }
+          ]
+        }
+      ]
+    });
+
+    render(<App />);
+    const user = await openWorkflowsTab();
+
+    await user.click(screen.getByText("feature-delivery"));
+    await user.click(screen.getByRole("button", { name: "Launch run" }));
+
+    await waitFor(() => {
+      const runCreateCall = fetchMock.mock.calls.find(([request, requestInit]) => {
+        const requestUrl =
+          typeof request === "string" || request instanceof URL ? request.toString() : request.url;
+        const url = new URL(requestUrl, "http://localhost");
+        const method = (requestInit?.method ?? "GET").toUpperCase();
+        return method === "POST" && url.pathname === "/workflow-runs";
+      });
+      expect(runCreateCall).toBeDefined();
+      const payload = JSON.parse(String((runCreateCall?.[1] as RequestInit).body));
+      expect(payload).toEqual({
+        workflow_template_id: 7,
+        task_ids: [],
+        initiated_by: "ui-workflow-quick-launch"
+      });
+    });
   });
 });

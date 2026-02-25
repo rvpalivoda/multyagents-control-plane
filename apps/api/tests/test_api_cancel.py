@@ -94,3 +94,64 @@ def test_abort_workflow_run_propagates_cancel_to_all_run_tasks(monkeypatch) -> N
     assert task_2.status_code == 200
     assert task_1.json()["status"] == "canceled"
     assert task_2.json()["status"] == "canceled"
+
+
+def test_cancel_releases_isolated_worktree_session(monkeypatch) -> None:
+    calls: list[str] = []
+
+    class _Response:
+        def __init__(self, status: str) -> None:
+            self._status = status
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, str]:
+            return {"status": self._status}
+
+    def fake_post(url, **kwargs):  # noqa: ANN001, ARG001
+        calls.append(url)
+        if url.endswith("/tasks/submit"):
+            return _Response("queued")
+        if url.endswith("/cancel"):
+            return _Response("canceled")
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setenv("HOST_RUNNER_URL", "http://runner.test")
+    monkeypatch.setattr("multyagents_api.runner_client.httpx.post", fake_post)
+
+    role_id = _create_role("cancel-isolated-role")
+    project = client.post(
+        "/projects",
+        json={
+            "name": "cancel-isolated-project",
+            "root_path": "/tmp/multyagents/cancel-isolated",
+            "allowed_paths": ["/tmp/multyagents/cancel-isolated/src"],
+        },
+    )
+    assert project.status_code == 200
+    project_id = project.json()["id"]
+
+    created = client.post(
+        "/tasks",
+        json={
+            "role_id": role_id,
+            "title": "cancel isolated",
+            "context7_mode": "inherit",
+            "execution_mode": "isolated-worktree",
+            "project_id": project_id,
+        },
+    )
+    assert created.status_code == 200
+    task_id = created.json()["id"]
+
+    dispatch = client.post(f"/tasks/{task_id}/dispatch")
+    assert dispatch.status_code == 200
+
+    canceled = client.post(f"/tasks/{task_id}/cancel")
+    assert canceled.status_code == 200
+    assert canceled.json()["status"] == "canceled"
+
+    release_events = client.get(f"/events?task_id={task_id}&event_type=task.worktree_session_released&limit=20")
+    assert release_events.status_code == 200
+    assert any(event["payload"].get("reason") == "cancel-requested" for event in release_events.json())

@@ -1,5 +1,7 @@
-from fastapi.testclient import TestClient
+import threading
 import time
+
+from fastapi.testclient import TestClient
 
 from multyagents_host_runner.main import app
 
@@ -211,6 +213,8 @@ def test_isolated_worktree_setup_and_cleanup_with_codex_executor(monkeypatch) ->
 
     def fake_run(command, **kwargs):  # noqa: ANN001, ARG001
         calls.append(command)
+        if command[0] == "git" and command[3:5] == ["worktree", "list"]:
+            return _Completed(0, stdout="", stderr="")
         if command[0] == "git" and command[3:5] == ["worktree", "add"]:
             return _Completed(0)
         if command[0] == "codex":
@@ -246,10 +250,187 @@ def test_isolated_worktree_setup_and_cleanup_with_codex_executor(monkeypatch) ->
     assert terminal["stdout"] == "isolated ok"
 
     assert calls[0][0] == "git"
-    assert calls[0][3:5] == ["worktree", "add"]
-    assert calls[1][0] == "codex"
-    assert calls[2][0] == "git"
-    assert calls[2][3:5] == ["worktree", "remove"]
+    assert calls[0][3:5] == ["worktree", "list"]
+    assert calls[1][0] == "git"
+    assert calls[1][3:5] == ["worktree", "add"]
+    assert calls[2][0] == "codex"
+    assert calls[3][0] == "git"
+    assert calls[3][3:5] == ["worktree", "remove"]
+
+
+def test_isolated_worktree_cleanup_runs_on_failed_execution(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    class _Completed:
+        def __init__(self, returncode: int, stdout: str = "", stderr: str = "") -> None:
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(command, **kwargs):  # noqa: ANN001, ARG001
+        calls.append(command)
+        if command[0] == "git" and command[3:5] == ["worktree", "list"]:
+            return _Completed(0, stdout="", stderr="")
+        if command[0] == "git" and command[3:5] == ["worktree", "add"]:
+            return _Completed(0)
+        if command[0] == "codex":
+            return _Completed(2, stdout="", stderr="boom")
+        if command[0] == "git" and command[3:5] == ["worktree", "remove"]:
+            return _Completed(0)
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setenv("HOST_RUNNER_EXECUTOR", "codex")
+    monkeypatch.setenv("HOST_RUNNER_CODEX_BIN", "codex")
+    monkeypatch.setattr("multyagents_host_runner.main.subprocess.run", fake_run)
+
+    submit = client.post(
+        "/tasks/submit",
+        json={
+            "task_id": "task-9-failed",
+            "run_id": "run-9-failed",
+            "prompt": "isolated fail run",
+            "execution_mode": "isolated-worktree",
+            "workspace": {
+                "project_id": 7,
+                "project_root": "/tmp/multyagents/isolated-repo",
+                "lock_paths": [],
+                "worktree_path": "/tmp/multyagents/isolated-repo/.multyagents/worktrees/task-9-failed",
+                "git_branch": "multyagents/task-9-failed",
+            },
+        },
+    )
+    assert submit.status_code == 200
+
+    terminal = _wait_for_terminal("task-9-failed")
+    assert terminal["status"] == "failed"
+    assert terminal["worktree_cleanup_attempted"] is True
+    assert terminal["worktree_cleanup_succeeded"] is True
+    assert any(command[0] == "git" and command[3:5] == ["worktree", "remove"] for command in calls)
+
+
+def test_isolated_worktree_cleanup_runs_when_canceled(monkeypatch) -> None:
+    calls: list[list[str]] = []
+    release_executor = threading.Event()
+
+    class _Completed:
+        def __init__(self, returncode: int, stdout: str = "", stderr: str = "") -> None:
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(command, **kwargs):  # noqa: ANN001, ARG001
+        calls.append(command)
+        if command[0] == "git" and command[3:5] == ["worktree", "list"]:
+            return _Completed(0, stdout="", stderr="")
+        if command[0] == "git" and command[3:5] == ["worktree", "add"]:
+            return _Completed(0)
+        if command[0] == "codex":
+            release_executor.wait(timeout=1.0)
+            return _Completed(0, stdout="late", stderr="")
+        if command[0] == "git" and command[3:5] == ["worktree", "remove"]:
+            return _Completed(0)
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setenv("HOST_RUNNER_EXECUTOR", "codex")
+    monkeypatch.setenv("HOST_RUNNER_CODEX_BIN", "codex")
+    monkeypatch.setattr("multyagents_host_runner.main.subprocess.run", fake_run)
+
+    submit = client.post(
+        "/tasks/submit",
+        json={
+            "task_id": "task-9-cancel",
+            "run_id": "run-9-cancel",
+            "prompt": "isolated cancel run",
+            "execution_mode": "isolated-worktree",
+            "workspace": {
+                "project_id": 7,
+                "project_root": "/tmp/multyagents/isolated-repo",
+                "lock_paths": [],
+                "worktree_path": "/tmp/multyagents/isolated-repo/.multyagents/worktrees/task-9-cancel",
+                "git_branch": "multyagents/task-9-cancel",
+            },
+        },
+    )
+    assert submit.status_code == 200
+
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        current = client.get("/tasks/task-9-cancel")
+        assert current.status_code == 200
+        if current.json()["status"] == "running":
+            break
+        time.sleep(0.03)
+    canceled = client.post("/tasks/task-9-cancel/cancel")
+    assert canceled.status_code == 200
+    assert canceled.json()["status"] == "canceled"
+    release_executor.set()
+
+    time.sleep(0.1)
+    assert any(command[0] == "git" and command[3:5] == ["worktree", "remove"] for command in calls)
+
+
+def test_isolated_worktree_submit_rejects_colliding_branch_and_path(monkeypatch) -> None:
+    release_executor = threading.Event()
+
+    class _Completed:
+        def __init__(self, returncode: int, stdout: str = "", stderr: str = "") -> None:
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(command, **kwargs):  # noqa: ANN001, ARG001
+        if command[0] == "git" and command[3:5] == ["worktree", "list"]:
+            return _Completed(0, stdout="", stderr="")
+        if command[0] == "git" and command[3:5] == ["worktree", "add"]:
+            return _Completed(0)
+        if command[0] == "git" and command[3:5] == ["worktree", "remove"]:
+            return _Completed(0)
+        if command[0] == "codex":
+            release_executor.wait(timeout=1.0)
+            return _Completed(0, stdout="ok", stderr="")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setenv("HOST_RUNNER_EXECUTOR", "codex")
+    monkeypatch.setenv("HOST_RUNNER_CODEX_BIN", "codex")
+    monkeypatch.setattr("multyagents_host_runner.main.subprocess.run", fake_run)
+
+    first_submit = client.post(
+        "/tasks/submit",
+        json={
+            "task_id": "task-9-collision-a",
+            "run_id": "run-9-collision-a",
+            "prompt": "collision a",
+            "execution_mode": "isolated-worktree",
+            "workspace": {
+                "project_id": 7,
+                "project_root": "/tmp/multyagents/isolated-repo",
+                "lock_paths": [],
+                "worktree_path": "/tmp/multyagents/isolated-repo/.multyagents/worktrees/collision",
+                "git_branch": "multyagents/collision",
+            },
+        },
+    )
+    assert first_submit.status_code == 200
+
+    second_submit = client.post(
+        "/tasks/submit",
+        json={
+            "task_id": "task-9-collision-b",
+            "run_id": "run-9-collision-b",
+            "prompt": "collision b",
+            "execution_mode": "isolated-worktree",
+            "workspace": {
+                "project_id": 7,
+                "project_root": "/tmp/multyagents/isolated-repo",
+                "lock_paths": [],
+                "worktree_path": "/tmp/multyagents/isolated-repo/.multyagents/worktrees/collision",
+                "git_branch": "multyagents/collision",
+            },
+        },
+    )
+    assert second_submit.status_code == 409
+    assert "isolated-worktree collision" in second_submit.json()["detail"]
+    release_executor.set()
 
 
 def test_isolated_worktree_requires_workspace_metadata() -> None:

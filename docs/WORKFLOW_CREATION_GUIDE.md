@@ -11,7 +11,24 @@ References:
 - Create at least one role in the `Roles` tab first.
 - Optional: create/select a project if you want workflow templates scoped to a project.
 
-## 2. Quick create mode
+## 2. Built-in presets
+
+The `Workflows` tab now includes built-in presets for common operator + assistant scenarios:
+- `Feature delivery`
+- `Bugfix fast lane`
+- `Docs / research lane`
+
+Preset usage:
+1. Pick a value in the `Preset` dropdown.
+2. Read the `Preset scenario` text (includes default step chain).
+3. Click `Apply preset` to seed workflow name and step cards.
+4. Click `Create` to save the template.
+
+Notes:
+- Presets set role for each step to the first available role.
+- If no roles exist yet, preset application is blocked.
+
+## 3. Quick create mode
 
 Use `Quick create` when you want guided step cards and inline validation.
 
@@ -31,7 +48,7 @@ Quick mode mapping:
 - UI `Prompt` is written to API field `title`.
 - Quick mode edits these fields directly: `step_id`, `role_id`, `title` (`Prompt`), `depends_on`.
 
-## 3. Advanced JSON mode (`Raw JSON`)
+## 4. Advanced JSON mode (`Raw JSON`)
 
 Use `Raw JSON` when you need to edit payload directly.
 
@@ -62,14 +79,31 @@ Minimum valid step object:
 Optional API field currently supported per step:
 - `required_artifacts` (for artifact handoff constraints).
 
-## 4. Switching between Quick and Raw JSON
+## 5. Switching between Quick and Raw JSON
 
 - `Quick create` -> `Raw JSON`: always available; JSON is generated from current step cards.
 - `Raw JSON` -> `Quick create`: allowed only when `Steps JSON` is valid JSON array of objects.
 - If JSON is invalid, UI blocks switch back and shows:
   - `Steps JSON must be valid before switching to Quick create.`
 
-## 5. Current validation behavior
+## 6. Quick launch from Workflows tab
+
+Use `Quick launch` in the same `Workflows` page to start a run with minimal inputs.
+
+Steps:
+1. Select a workflow row in the templates table (or type `Template ID` manually).
+2. Optional: set `Initiated by` (default is `ui-workflow-quick-launch`).
+3. Click `Launch run`.
+
+Behavior:
+- If `Template ID` is empty, UI uses the selected table row.
+- `Template ID` must be numeric when provided.
+- Launch uses existing API contract `POST /workflow-runs` with:
+  - `workflow_template_id`
+  - empty `task_ids`
+  - optional `initiated_by`
+
+## 7. Current validation behavior
 
 Quick create validates before create/update:
 - step list must not be empty (`At least one step is required.`)
@@ -92,7 +126,7 @@ Server-side API validations still apply for both modes:
 - each `role_id` must exist (otherwise `404`)
 - `project_id` must exist when provided (otherwise `404`)
 
-## 6. Best practices
+## 8. Best practices
 
 - Keep `step_id` short and stable (`plan`, `build`, `review`).
 - Use deterministic dependency chains; avoid unnecessary fan-in/fan-out.
@@ -101,7 +135,7 @@ Server-side API validations still apply for both modes:
 - Keep prompts outcome-focused and specific per step.
 - Refresh workflows after major edits and re-select the template before running.
 
-## 7. Mini pre-run checklist
+## 9. Mini pre-run checklist
 
 Before creating a workflow run:
 
@@ -110,4 +144,4 @@ Before creating a workflow run:
 - [ ] Every step has a real existing role.
 - [ ] Dependencies form an acyclic DAG and reference existing step IDs only.
 - [ ] If `Project ID` is set, it points to an existing project.
-- [ ] In `Runs`, selected `workflow_template_id` matches the template you just edited.
+- [ ] In `Workflows` quick launch (or in `Runs`), selected `workflow_template_id` matches the template you just edited.

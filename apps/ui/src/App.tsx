@@ -100,6 +100,19 @@ async function apiGet<T>(path: string): Promise<T> {
 }
 
 type WorkflowEditorMode = "quick" | "json";
+type WorkflowPresetId = "feature-delivery" | "bugfix-fast-lane" | "docs-research-lane";
+
+type WorkflowPreset = {
+  id: WorkflowPresetId;
+  label: string;
+  scenario: string;
+  defaultWorkflowName: string;
+  steps: Array<{
+    step_id: string;
+    title: string;
+    depends_on: string[];
+  }>;
+};
 
 function stepsToJson(steps: unknown[]): string {
   return JSON.stringify(steps, null, 2);
@@ -151,6 +164,87 @@ const DEFAULT_WORKFLOW_STEPS: WorkflowStep[] = [
   { step_id: "build", role_id: 1, title: "Build", depends_on: ["plan"] }
 ];
 const DEFAULT_STEPS_JSON = stepsToJson(DEFAULT_WORKFLOW_STEPS);
+const DEFAULT_WORKFLOW_PRESET_ID: WorkflowPresetId = "feature-delivery";
+const WORKFLOW_PRESETS: WorkflowPreset[] = [
+  {
+    id: "feature-delivery",
+    label: "Feature delivery",
+    scenario: "Plan, implement, test, and review a product increment with explicit quality gates.",
+    defaultWorkflowName: "feature-delivery",
+    steps: [
+      { step_id: "plan", title: "Clarify scope and break work into concrete implementation steps.", depends_on: [] },
+      {
+        step_id: "implement",
+        title: "Implement the feature changes and keep notes for reviewers.",
+        depends_on: ["plan"]
+      },
+      {
+        step_id: "test",
+        title: "Run relevant tests and verify acceptance criteria with evidence.",
+        depends_on: ["implement"]
+      },
+      {
+        step_id: "review",
+        title: "Review final diff, risks, and rollout notes before completion.",
+        depends_on: ["test"]
+      }
+    ]
+  },
+  {
+    id: "bugfix-fast-lane",
+    label: "Bugfix fast lane",
+    scenario: "Triage, patch, and verify urgent defects with a short delivery path.",
+    defaultWorkflowName: "bugfix-fast-lane",
+    steps: [
+      { step_id: "triage", title: "Reproduce the bug and isolate root cause quickly.", depends_on: [] },
+      {
+        step_id: "fix",
+        title: "Implement the smallest safe patch and document behavioral impact.",
+        depends_on: ["triage"]
+      },
+      {
+        step_id: "verify",
+        title: "Run focused regression checks and confirm the bug is resolved.",
+        depends_on: ["fix"]
+      }
+    ]
+  },
+  {
+    id: "docs-research-lane",
+    label: "Docs / research lane",
+    scenario: "Gather facts, synthesize findings, and publish operator-ready documentation.",
+    defaultWorkflowName: "docs-research-lane",
+    steps: [
+      { step_id: "research", title: "Collect relevant sources, constraints, and open questions.", depends_on: [] },
+      {
+        step_id: "synthesize",
+        title: "Synthesize findings into recommendations and key decisions.",
+        depends_on: ["research"]
+      },
+      {
+        step_id: "publish",
+        title: "Draft final documentation with references and action items.",
+        depends_on: ["synthesize"]
+      }
+    ]
+  }
+];
+const WORKFLOW_PRESET_BY_ID: Record<WorkflowPresetId, WorkflowPreset> = WORKFLOW_PRESETS.reduce(
+  (mapping, preset) => {
+    mapping[preset.id] = preset;
+    return mapping;
+  },
+  {} as Record<WorkflowPresetId, WorkflowPreset>
+);
+
+function workflowPresetToDrafts(preset: WorkflowPreset, defaultRoleId: number | null): WorkflowStepDraft[] {
+  return preset.steps.map((step, index) => ({
+    ...createWorkflowStepDraft(defaultRoleId, index),
+    step_id: step.step_id,
+    prompt: step.title,
+    depends_on: [...step.depends_on]
+  }));
+}
 
 export function App() {
   const [activeTab, setActiveTab] = useState<UiTab>("overview");
@@ -186,12 +280,15 @@ export function App() {
   const [workflowName, setWorkflowName] = useState("feature-flow");
   const [workflowProjectIdInput, setWorkflowProjectIdInput] = useState("");
   const [workflowStepsJson, setWorkflowStepsJson] = useState(DEFAULT_STEPS_JSON);
+  const [selectedWorkflowPresetId, setSelectedWorkflowPresetId] = useState<WorkflowPresetId>(DEFAULT_WORKFLOW_PRESET_ID);
   const [workflowEditorMode, setWorkflowEditorMode] = useState<WorkflowEditorMode>("quick");
   const [workflowStepDrafts, setWorkflowStepDrafts] = useState<WorkflowStepDraft[]>(
     workflowStepsToDrafts(DEFAULT_WORKFLOW_STEPS as unknown as Record<string, unknown>[])
   );
   const [workflows, setWorkflows] = useState<WorkflowTemplateRead[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<number | null>(null);
+  const [workflowQuickLaunchTemplateIdInput, setWorkflowQuickLaunchTemplateIdInput] = useState("");
+  const [workflowQuickLaunchInitiatedBy, setWorkflowQuickLaunchInitiatedBy] = useState("ui-workflow-quick-launch");
   const [runWorkflowTemplateIdInput, setRunWorkflowTemplateIdInput] = useState("");
   const [runTaskIdsInput, setRunTaskIdsInput] = useState("");
   const [runInitiatedBy, setRunInitiatedBy] = useState("ui");
@@ -222,6 +319,22 @@ export function App() {
     () => workflowRuns.find((item) => item.id === selectedRunId) ?? null,
     [workflowRuns, selectedRunId]
   );
+  const selectedWorkflowPreset = useMemo(
+    () => WORKFLOW_PRESET_BY_ID[selectedWorkflowPresetId] ?? WORKFLOW_PRESETS[0],
+    [selectedWorkflowPresetId]
+  );
+  const quickLaunchTemplateIdInputTrimmed = workflowQuickLaunchTemplateIdInput.trim();
+  const parsedQuickLaunchTemplateId =
+    quickLaunchTemplateIdInputTrimmed.length === 0 ? null : Number(quickLaunchTemplateIdInputTrimmed);
+  const hasQuickLaunchTemplateInputError =
+    quickLaunchTemplateIdInputTrimmed.length > 0 &&
+    parsedQuickLaunchTemplateId !== null &&
+    Number.isNaN(parsedQuickLaunchTemplateId);
+  const resolvedQuickLaunchTemplateId = hasQuickLaunchTemplateInputError
+    ? null
+    : quickLaunchTemplateIdInputTrimmed.length === 0
+      ? selectedWorkflowId
+      : parsedQuickLaunchTemplateId;
   const roleNameById = useMemo(() => {
     const mapping: Record<number, string> = {};
     roles.forEach((role) => {
@@ -416,6 +529,7 @@ export function App() {
   const canSubmitWorkflow =
     workflowEditorMode === "quick" ? !workflowQuickValidation.hasErrors : !workflowJsonValidationState.hasErrors;
   const defaultWorkflowRoleId = roles.length > 0 ? roles[0].id : null;
+  const canQuickLaunchWorkflow = resolvedQuickLaunchTemplateId !== null;
 
   const canCreateTask = selectedRole !== null;
   const canDispatch = task !== null;
@@ -542,6 +656,8 @@ export function App() {
     setWorkflowProjectIdInput(workflow.project_id === null ? "" : String(workflow.project_id));
     setWorkflowStepsJson(stepsToJson(workflow.steps as unknown as Record<string, unknown>[]));
     setWorkflowStepDrafts(workflowStepsToDrafts(workflow.steps as unknown as Record<string, unknown>[]));
+    setWorkflowQuickLaunchTemplateIdInput(String(workflow.id));
+    setRunWorkflowTemplateIdInput(String(workflow.id));
   }
 
   function selectProject(project: ProjectRead) {
@@ -565,6 +681,19 @@ export function App() {
   function applyWorkflowStepDrafts(nextDrafts: WorkflowStepDraft[]) {
     setWorkflowStepDrafts(nextDrafts);
     setWorkflowStepsJson(stepsToJson(workflowDraftsToSteps(nextDrafts)));
+  }
+
+  function onApplySelectedWorkflowPreset() {
+    if (defaultWorkflowRoleId === null) {
+      setError("Create at least one role before applying workflow presets.");
+      return;
+    }
+    setSelectedWorkflowId(null);
+    setWorkflowName(selectedWorkflowPreset.defaultWorkflowName);
+    setWorkflowProjectIdInput("");
+    setWorkflowEditorMode("quick");
+    setError(null);
+    applyWorkflowStepDrafts(workflowPresetToDrafts(selectedWorkflowPreset, defaultWorkflowRoleId));
   }
 
   function onWorkflowEditorModeChange(nextMode: WorkflowEditorMode) {
@@ -1042,6 +1171,35 @@ export function App() {
     }
   }
 
+  async function onQuickLaunchWorkflowRun(event: FormEvent) {
+    event.preventDefault();
+    if (hasQuickLaunchTemplateInputError) {
+      setError("Quick launch template ID must be a number.");
+      return;
+    }
+    if (resolvedQuickLaunchTemplateId === null) {
+      setError("Select a workflow template or enter a template ID for quick launch.");
+      return;
+    }
+    setError(null);
+    try {
+      const created = await apiPost<WorkflowRunRead>("/workflow-runs", {
+        workflow_template_id: resolvedQuickLaunchTemplateId,
+        task_ids: [],
+        initiated_by: workflowQuickLaunchInitiatedBy.trim() === "" ? null : workflowQuickLaunchInitiatedBy.trim()
+      });
+      setRunWorkflowTemplateIdInput(String(resolvedQuickLaunchTemplateId));
+      setTaskFilterRunIdInput(String(created.id));
+      setActiveTab("runs");
+      await loadWorkflowRuns();
+      setSelectedRunId(created.id);
+      await loadTasks(created.id);
+      await loadTimelineEvents(created.id, null);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
   async function onRunAction(action: "pause" | "resume" | "abort") {
     if (selectedRunId === null) {
       return;
@@ -1152,6 +1310,7 @@ export function App() {
         selectWorkflow(remaining[0]);
       } else {
         setSelectedWorkflowId(null);
+        setWorkflowQuickLaunchTemplateIdInput("");
       }
     } catch (err) {
       setError((err as Error).message);
@@ -1460,11 +1619,39 @@ export function App() {
                 <span className={labelClass}>Project ID</span>
                 <input className={inputClass} value={workflowProjectIdInput} onChange={(e) => setWorkflowProjectIdInput(e.target.value)} placeholder="optional" />
               </label>
-              <div className="md:col-span-2 xl:col-span-2 flex flex-wrap items-end gap-2">
+              <label>
+                <span className={labelClass}>Preset</span>
+                <select
+                  className={inputClass}
+                  value={selectedWorkflowPresetId}
+                  onChange={(event) => setSelectedWorkflowPresetId(event.target.value as WorkflowPresetId)}
+                >
+                  {WORKFLOW_PRESETS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex flex-wrap items-end gap-2">
                 <button type="submit" className={primaryButtonClass} disabled={!canSubmitWorkflow}>Create</button>
                 <button type="button" className={buttonClass} onClick={onUpdateWorkflow} disabled={selectedWorkflowId === null || !canSubmitWorkflow}>Update selected</button>
                 <button type="button" className={buttonClass} onClick={onDeleteWorkflow} disabled={selectedWorkflowId === null}>Delete selected</button>
                 <button type="button" className={buttonClass} onClick={() => void loadWorkflows()}>Refresh</button>
+              </div>
+              <div className="md:col-span-2 xl:col-span-4 rounded-lg border border-slate-200 bg-blue-50 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className={labelClass}>Preset scenario</p>
+                    <p className="mt-1 text-sm text-slate-700">{selectedWorkflowPreset.scenario}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Step chain: {selectedWorkflowPreset.steps.map((step) => step.step_id).join(" -> ")}
+                    </p>
+                  </div>
+                  <button type="button" className={buttonClass} onClick={onApplySelectedWorkflowPreset}>
+                    Apply preset
+                  </button>
+                </div>
               </div>
               <div className="md:col-span-2 xl:col-span-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1655,6 +1842,43 @@ export function App() {
                   </div>
                 )}
               </div>
+            </form>
+
+            <form className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4" onSubmit={onQuickLaunchWorkflowRun}>
+              <div className="md:col-span-2 xl:col-span-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">Quick launch</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Start a run directly from this page. Leave template ID empty to use the selected template row.
+                    </p>
+                  </div>
+                  <button type="submit" className={primaryButtonClass} disabled={!canQuickLaunchWorkflow}>
+                    Launch run
+                  </button>
+                </div>
+              </div>
+              <label>
+                <span className={labelClass}>Template ID</span>
+                <input
+                  className={inputClass}
+                  value={workflowQuickLaunchTemplateIdInput}
+                  onChange={(event) => setWorkflowQuickLaunchTemplateIdInput(event.target.value)}
+                  placeholder={selectedWorkflowId === null ? "required if no row selected" : `selected: ${selectedWorkflowId}`}
+                />
+                {hasQuickLaunchTemplateInputError && (
+                  <p className="mt-1 text-xs text-rose-700">Template ID must be a number.</p>
+                )}
+              </label>
+              <label>
+                <span className={labelClass}>Initiated by</span>
+                <input
+                  className={inputClass}
+                  value={workflowQuickLaunchInitiatedBy}
+                  onChange={(event) => setWorkflowQuickLaunchInitiatedBy(event.target.value)}
+                  placeholder="optional"
+                />
+              </label>
             </form>
 
             <div className="mt-4 overflow-x-auto">
