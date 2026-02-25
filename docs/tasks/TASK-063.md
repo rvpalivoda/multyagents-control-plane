@@ -32,4 +32,4 @@
 
 - Added `apps/api/tests/test_api_contract_regression.py` to verify additive compatibility for run/summary contracts (gates/timeline/triage fields).
 - Validation: `.venv/bin/pytest -q tests/test_api_contract_regression.py tests/test_api_partial_rerun.py tests/test_api_control_loop.py` -> passed (7).
-- Commits: `<final-sha>`
+- Commits: `5a3eae6`
