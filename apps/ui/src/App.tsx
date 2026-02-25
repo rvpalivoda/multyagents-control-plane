@@ -100,7 +100,13 @@ async function apiGet<T>(path: string): Promise<T> {
 }
 
 type WorkflowEditorMode = "quick" | "json";
-type WorkflowPresetId = "feature-delivery" | "bugfix-fast-lane" | "docs-research-lane";
+type WorkflowPresetId =
+  | "feature-delivery"
+  | "bugfix-fast-lane"
+  | "docs-research-lane"
+  | "article-pipeline"
+  | "social-pipeline"
+  | "localization-pipeline";
 
 type WorkflowPreset = {
   id: WorkflowPresetId;
@@ -225,6 +231,93 @@ const WORKFLOW_PRESETS: WorkflowPreset[] = [
         step_id: "publish",
         title: "Draft final documentation with references and action items.",
         depends_on: ["synthesize"]
+      }
+    ]
+  },
+  {
+    id: "article-pipeline",
+    label: "Article pipeline",
+    scenario: "Produce a long-form article from research through editorial and fact-check gates.",
+    defaultWorkflowName: "article-pipeline",
+    steps: [
+      { step_id: "research", title: "Research the topic, audience needs, and source constraints.", depends_on: [] },
+      {
+        step_id: "outline",
+        title: "Build a clear article structure with sections and key arguments.",
+        depends_on: ["research"]
+      },
+      {
+        step_id: "draft",
+        title: "Write the first full draft following outline and target tone.",
+        depends_on: ["outline"]
+      },
+      {
+        step_id: "edit",
+        title: "Edit for clarity, flow, and style consistency.",
+        depends_on: ["draft"]
+      },
+      {
+        step_id: "fact-check",
+        title: "Validate claims, numbers, and references before publication.",
+        depends_on: ["edit"]
+      },
+      {
+        step_id: "final",
+        title: "Produce final publication-ready article output.",
+        depends_on: ["fact-check"]
+      }
+    ]
+  },
+  {
+    id: "social-pipeline",
+    label: "Social pipeline",
+    scenario: "Generate social content variants with hook iteration and QA before final delivery.",
+    defaultWorkflowName: "social-pipeline",
+    steps: [
+      { step_id: "ideas", title: "Generate post ideas aligned to campaign objective.", depends_on: [] },
+      {
+        step_id: "hooks",
+        title: "Create strong hooks for top ideas across target channels.",
+        depends_on: ["ideas"]
+      },
+      {
+        step_id: "variants",
+        title: "Produce multiple post variants with CTA and format adaptation.",
+        depends_on: ["hooks"]
+      },
+      {
+        step_id: "qa",
+        title: "Check policy, tone, and clarity across all variants.",
+        depends_on: ["variants"]
+      },
+      {
+        step_id: "final",
+        title: "Select and deliver final approved post set.",
+        depends_on: ["qa"]
+      }
+    ]
+  },
+  {
+    id: "localization-pipeline",
+    label: "Localization pipeline",
+    scenario: "Adapt source text for a target locale with tone QA and final sign-off.",
+    defaultWorkflowName: "localization-pipeline",
+    steps: [
+      { step_id: "source", title: "Ingest source content and localization requirements.", depends_on: [] },
+      {
+        step_id: "adapt",
+        title: "Adapt messaging to locale, idioms, and cultural context.",
+        depends_on: ["source"]
+      },
+      {
+        step_id: "tone-qa",
+        title: "Run tone and terminology QA against target audience expectations.",
+        depends_on: ["adapt"]
+      },
+      {
+        step_id: "final",
+        title: "Deliver final localized version for publication.",
+        depends_on: ["tone-qa"]
       }
     ]
   }

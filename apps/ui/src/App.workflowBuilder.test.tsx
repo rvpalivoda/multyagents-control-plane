@@ -32,9 +32,36 @@ function jsonResponse(payload: unknown, status = 200): Response {
   });
 }
 
+function createWorkflowRunStub(id: number, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    workflow_template_id: null,
+    task_ids: [],
+    status: "created",
+    initiated_by: null,
+    created_at: "2026-02-25T00:00:00Z",
+    updated_at: "2026-02-25T00:00:00Z",
+    failure_categories: [],
+    failure_triage_hints: [],
+    suggested_next_actions: [],
+    duration_ms: null,
+    success_rate: 0,
+    retries_total: 0,
+    per_role: [],
+    ...overrides
+  };
+}
+
 function installFetchMock(overrides: Record<string, unknown> = {}) {
   const getPayloads = { ...DEFAULT_GET_PAYLOADS, ...overrides };
-  let workflowRuns = Array.isArray(getPayloads["/workflow-runs"]) ? [...(getPayloads["/workflow-runs"] as unknown[])] : [];
+  let workflowTemplates = Array.isArray(getPayloads["/workflow-templates"])
+    ? [...(getPayloads["/workflow-templates"] as unknown[])]
+    : [];
+  let workflowRuns = Array.isArray(getPayloads["/workflow-runs"])
+    ? (getPayloads["/workflow-runs"] as unknown[]).map((item, index) =>
+        createWorkflowRunStub(index + 1, item as Record<string, unknown>)
+      )
+    : [];
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const method = (init?.method ?? "GET").toUpperCase();
@@ -47,21 +74,37 @@ function installFetchMock(overrides: Record<string, unknown> = {}) {
       if (path === "/events") {
         return jsonResponse([]);
       }
+      if (path === "/workflow-templates") {
+        return jsonResponse(workflowTemplates);
+      }
+      if (path === "/workflow-runs") {
+        return jsonResponse(workflowRuns);
+      }
       if (path in getPayloads) {
         return jsonResponse(getPayloads[path]);
       }
     }
 
     if (method === "POST") {
-      if (path === "/workflow-runs") {
+      if (path === "/workflow-templates") {
         const payload = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
         const created = {
-          id: workflowRuns.length + 1,
-          status: "created",
+          id: workflowTemplates.length + 1,
+          name: typeof payload.name === "string" ? payload.name : "workflow",
+          project_id: payload.project_id ?? null,
+          steps: Array.isArray(payload.steps) ? payload.steps : []
+        };
+        workflowTemplates = [created, ...workflowTemplates];
+        return jsonResponse(created);
+      }
+      if (path === "/workflow-runs") {
+        const payload = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
+        const created = createWorkflowRunStub(workflowRuns.length + 1, {
           workflow_template_id: payload.workflow_template_id ?? null,
           task_ids: Array.isArray(payload.task_ids) ? payload.task_ids : [],
+          initiated_by: typeof payload.initiated_by === "string" ? payload.initiated_by : null,
           updated_at: "2026-02-25T00:00:00Z"
-        };
+        });
         workflowRuns = [created, ...workflowRuns];
         return jsonResponse(created);
       }
@@ -203,6 +246,100 @@ describe("workflow builder critical flows", () => {
     expect(workflowName.value).toBe("bugfix-fast-lane");
     const stepIds = (screen.getAllByLabelText("Step id") as HTMLInputElement[]).map((input) => input.value);
     expect(stepIds).toEqual(["triage", "fix", "verify"]);
+  });
+
+  it("applies article/social/localization presets in quick create", async () => {
+    render(<App />);
+    const user = await openWorkflowsTab();
+
+    const presetCases = [
+      {
+        id: "article-pipeline",
+        scenario: "Produce a long-form article from research through editorial and fact-check gates.",
+        workflowName: "article-pipeline",
+        stepIds: ["research", "outline", "draft", "edit", "fact-check", "final"]
+      },
+      {
+        id: "social-pipeline",
+        scenario: "Generate social content variants with hook iteration and QA before final delivery.",
+        workflowName: "social-pipeline",
+        stepIds: ["ideas", "hooks", "variants", "qa", "final"]
+      },
+      {
+        id: "localization-pipeline",
+        scenario: "Adapt source text for a target locale with tone QA and final sign-off.",
+        workflowName: "localization-pipeline",
+        stepIds: ["source", "adapt", "tone-qa", "final"]
+      }
+    ];
+
+    const workflowNameInput = screen.getByLabelText("Name") as HTMLInputElement;
+    const presetSelect = screen.getByLabelText("Preset");
+    for (const presetCase of presetCases) {
+      await user.selectOptions(presetSelect, presetCase.id);
+      expect(screen.getByText(presetCase.scenario)).toBeVisible();
+      await user.click(screen.getByRole("button", { name: "Apply preset" }));
+
+      expect(workflowNameInput.value).toBe(presetCase.workflowName);
+      const stepIds = (screen.getAllByLabelText("Step id") as HTMLInputElement[]).map((input) => input.value);
+      expect(stepIds).toEqual(presetCase.stepIds);
+    }
+  });
+
+  it("creates and quick launches article preset without raw JSON editing", async () => {
+    const fetchMock = installFetchMock();
+    render(<App />);
+    const user = await openWorkflowsTab();
+
+    await user.selectOptions(screen.getByLabelText("Preset"), "article-pipeline");
+    await user.click(screen.getByRole("button", { name: "Apply preset" }));
+    expect(screen.queryByLabelText("Steps JSON")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      const workflowCreateCall = fetchMock.mock.calls.find(([request, requestInit]) => {
+        const requestUrl =
+          typeof request === "string" || request instanceof URL ? request.toString() : request.url;
+        const url = new URL(requestUrl, "http://localhost");
+        const method = (requestInit?.method ?? "GET").toUpperCase();
+        return method === "POST" && url.pathname === "/workflow-templates";
+      });
+      expect(workflowCreateCall).toBeDefined();
+
+      const createPayload = JSON.parse(String((workflowCreateCall?.[1] as RequestInit).body)) as {
+        name: string;
+        steps: Array<{ step_id: string }>;
+      };
+      expect(createPayload.name).toBe("article-pipeline");
+      expect(createPayload.steps.map((step) => step.step_id)).toEqual([
+        "research",
+        "outline",
+        "draft",
+        "edit",
+        "fact-check",
+        "final"
+      ]);
+    });
+
+    await user.click(screen.getByRole("button", { name: "Launch run" }));
+
+    await waitFor(() => {
+      const runCreateCall = fetchMock.mock.calls.find(([request, requestInit]) => {
+        const requestUrl =
+          typeof request === "string" || request instanceof URL ? request.toString() : request.url;
+        const url = new URL(requestUrl, "http://localhost");
+        const method = (requestInit?.method ?? "GET").toUpperCase();
+        return method === "POST" && url.pathname === "/workflow-runs";
+      });
+      expect(runCreateCall).toBeDefined();
+      const payload = JSON.parse(String((runCreateCall?.[1] as RequestInit).body));
+      expect(payload).toEqual({
+        workflow_template_id: 1,
+        task_ids: [],
+        initiated_by: "ui-workflow-quick-launch"
+      });
+    });
   });
 
   it("quick launches a run from workflows tab with minimal fields", async () => {

@@ -17,6 +17,9 @@ The `Workflows` tab now includes built-in presets for common operator + assistan
 - `Feature delivery`
 - `Bugfix fast lane`
 - `Docs / research lane`
+- `Article pipeline`
+- `Social pipeline`
+- `Localization pipeline`
 
 Preset usage:
 1. Pick a value in the `Preset` dropdown.
@@ -27,6 +30,32 @@ Preset usage:
 Notes:
 - Presets set role for each step to the first available role.
 - If no roles exist yet, preset application is blocked.
+- Presets are applied in `Quick create` mode; manual JSON editing is not required.
+
+### 2.1 Content workflow pack examples
+
+Use these presets for multi-agent text production:
+
+- `Article pipeline`:
+  - Chain: `research -> outline -> draft -> edit -> fact-check -> final`
+  - Typical usage: long-form blog posts, explainers, knowledge-base articles.
+- `Social pipeline`:
+  - Chain: `ideas -> hooks -> variants -> qa -> final`
+  - Typical usage: campaign post sets and short-form channel variants.
+- `Localization pipeline`:
+  - Chain: `source -> adapt -> tone-qa -> final`
+  - Typical usage: localized copies with tone/terminology checks.
+
+Concrete no-JSON launch flow:
+1. Open `Workflows`.
+2. Choose preset (`Article pipeline`, `Social pipeline`, or `Localization pipeline`).
+3. Click `Apply preset`.
+4. Click `Create`.
+5. In `Quick launch`, leave `Template ID` empty (selected row is used) and click `Launch run`.
+
+Result:
+- Run is created via `POST /workflow-runs`.
+- Payload is minimal: `workflow_template_id`, empty `task_ids`, optional `initiated_by`.
 
 ## 3. Quick create mode
 

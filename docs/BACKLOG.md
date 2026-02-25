@@ -81,7 +81,7 @@
 
 
 ### EPIC-9 Autonomous operator effectiveness
-- `TASK-055` (`P0`, `in_progress`): Content workflow pack (article/social/localization)
+- `TASK-055` (`P0`, `done`): Content workflow pack (article/social/localization)
 - `TASK-054` (`P0`, `done`): Assistant control loop (plan->spawn->aggregate)
 - `TASK-051` (`P1`, `done`): Run-cost and throughput dashboard
 - `TASK-052` (`P1`, `done`): Auto-triage failed runs
@@ -89,7 +89,7 @@
 
 
 ### EPIC-10 Assistant-first production operations
-- `TASK-055` (`P0`, `in_progress`): Content workflow pack (article/social/localization)
+- `TASK-055` (`P0`, `done`): Content workflow pack (article/social/localization)
 - `TASK-056` (`P0`, `in_progress`): Unified quality gates (code + content)
 - `TASK-057` (`P0`, `in_progress`): Partial re-run engine (failed branches only)
 - `TASK-058` (`P0`, `in_progress`): Process transparency timeline
