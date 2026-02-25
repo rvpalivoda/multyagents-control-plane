@@ -126,6 +126,14 @@
 - `TASK-076` (`P2`, `done`): SLO performance and soak tests
 - `TASK-077` (`P1`, `done`): Release gate v2 (hard fail policies)
 
+
+### EPIC-14 Product intake and autonomous planning
+- `TASK-078` (`P0`, `in_progress`): Project Brief UI + API
+- `TASK-079` (`P0`, `in_progress`): Auto-decomposition engine (Brief -> Tasks)
+- `TASK-080` (`P1`, `todo`): Assignment planner (Role/Agent/Wave)
+- `TASK-081` (`P1`, `todo`): Wave launcher UI (batch start)
+- `TASK-082` (`P1`, `todo`): PM visibility dashboard
+
 ## Operating rule
 
 Before starting implementation, create/update task file from template:
