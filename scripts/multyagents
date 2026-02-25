@@ -270,6 +270,11 @@ cmd_readiness() {
   (cd "$ROOT_DIR" && ./scripts/task-061-readiness.sh)
 }
 
+cmd_restart_persistence() {
+  require_command python3
+  (cd "$ROOT_DIR" && ./scripts/task-073-restart-persistence.sh)
+}
+
 cmd_gate() {
   require_command python3
   require_command docker
@@ -346,6 +351,7 @@ Commands:
   race-stress Run TASK-072 concurrency/race stress suite (alias: stress-race)
   chaos    Run TASK-071 chaos failure drills scenario
   readiness Run TASK-061 local readiness scenarios and evidence capture
+  restart-persistence Run TASK-073 restart persistence invariant suite (alias: persistence-restart)
   gate     Run full reliability gate (api+bot+ui+smoke+readiness+e2e)
   desktop  Launch Electron desktop control panel
   help     Show this help
@@ -369,6 +375,7 @@ main() {
     race-stress|stress-race) cmd_race_stress ;;
     chaos) cmd_chaos ;;
     readiness) cmd_readiness ;;
+    restart-persistence|persistence-restart) cmd_restart_persistence ;;
     gate) cmd_gate ;;
     desktop) cmd_desktop ;;
     help|-h|--help) cmd_help ;;

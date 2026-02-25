@@ -15,6 +15,11 @@ Provide high confidence for daily production-like local usage across orchestrati
    - FastAPI endpoints via `TestClient`
    - Contract stability (additive fields only)
    - Negative paths and policy enforcement
+   - Security adversarial regression pack (`apps/api/tests/test_api_security_adversarial.py`):
+     - shared-workspace path traversal rejection (`..` escape attempts)
+     - symlink escape rejection for lock paths and docker mounts
+     - execution policy bypass rejection (`sandbox` not allowed outside `docker-sandbox`)
+     - secret redaction checks for runner submit/status failure surfaces
    - Failure injection regression pack (`apps/api/tests/test_api_failure_injection_regression.py`):
      - runner unreachable/network-style submit failure
      - permission/policy denial triage path
@@ -41,6 +46,11 @@ A release candidate is valid only when all are green:
 - `apps/ui`: build + smoke vitest
 - compose e2e smoke
 - readiness scenario run
+
+## Targeted deterministic security command
+
+- `cd apps/api && .venv/bin/pytest -q tests/test_api_security_adversarial.py`
+- Purpose: fast local regression checks for policy bypass attempts and secret-leak prevention.
 
 ## Bug policy
 If a test fails:

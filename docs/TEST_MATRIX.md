@@ -9,6 +9,7 @@
 | Compose E2E | `./scripts/multyagents e2e` | smoke passed |
 | Parallel stress smoke | `STRESS_RUNS=20 STRESS_PARALLELISM=6 ./scripts/multyagents stress-smoke` | summary `failed=0` |
 | Concurrency race stress (TASK-072) | `./scripts/multyagents race-stress` | summary `overall_status=pass`, invariants `passed=total` |
+| Restart persistence invariants (TASK-073) | `./scripts/multyagents restart-persistence` | summary `overall_status=pass`, invariants `passed=total` |
 | Chaos failure drills (TASK-071) | `./scripts/multyagents chaos` | summary `overall_status=success` (allows `expected_pending`) |
 | Local readiness | `./scripts/multyagents readiness` | scenarios run + evidence generated |
 

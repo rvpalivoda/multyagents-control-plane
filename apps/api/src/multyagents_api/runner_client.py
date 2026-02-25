@@ -4,6 +4,7 @@ import os
 
 import httpx
 
+from multyagents_api.security import redact_sensitive_text
 from multyagents_api.schemas import RunnerSubmission, RunnerSubmitPayload
 
 
@@ -69,10 +70,11 @@ def submit_to_runner(payload: RunnerSubmitPayload) -> RunnerSubmission:
             message="submitted",
         )
     except Exception as exc:  # noqa: BLE001
+        sanitized_error = redact_sensitive_text(str(exc))
         return RunnerSubmission(
             submitted=False,
             runner_url=base_url,
-            message=f"runner submit failed: {exc}",
+            message=f"runner submit failed: {sanitized_error}",
         )
 
 
@@ -99,8 +101,9 @@ def cancel_in_runner(task_id: int) -> RunnerSubmission:
             message="cancel requested",
         )
     except Exception as exc:  # noqa: BLE001
+        sanitized_error = redact_sensitive_text(str(exc))
         return RunnerSubmission(
             submitted=False,
             runner_url=base_url,
-            message=f"runner cancel failed: {exc}",
+            message=f"runner cancel failed: {sanitized_error}",
         )

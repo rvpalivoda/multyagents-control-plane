@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from multyagents_api.context_policy import resolve_context7_enabled
+from multyagents_api.security import redact_sensitive_text
 from multyagents_api.schemas import (
     AssistantIntentPlanRequest,
     AssistantIntentPlanResponse,
@@ -1590,19 +1591,20 @@ class InMemoryStore:
             raise NotFoundError(f"task {task_id} not found")
 
         run_id = self._task_latest_run.get(task_id)
+        sanitized_message = self._sanitize_sensitive_text(submission.message)
         event_payload: dict[str, Any] = {
             "submitted": submission.submitted,
             "runner_url": submission.runner_url,
-            "message": submission.message,
+            "message": sanitized_message,
             "runner_task_status": submission.runner_task_status,
         }
         if submission.submitted:
             record.status = TaskStatus.QUEUED.value
-            record.runner_message = submission.message or "submitted"
+            record.runner_message = sanitized_message or "submitted"
             event_type = "task.runner_queued"
         else:
             record.status = TaskStatus.SUBMIT_FAILED.value
-            record.runner_message = submission.message or "runner submit failed"
+            record.runner_message = sanitized_message or "runner submit failed"
             audit = self._audits.get(task_id)
             if audit is not None and audit.execution_mode == ExecutionMode.DOCKER_SANDBOX:
                 audit.sandbox_error = record.runner_message
@@ -1681,10 +1683,11 @@ class InMemoryStore:
             return self.get_task(task_id)
 
         run_id = self._task_latest_run.get(task_id)
+        sanitized_message = self._sanitize_sensitive_text(submission.message)
         event_payload: dict[str, Any] = {
             "submitted": submission.submitted,
             "runner_url": submission.runner_url,
-            "message": submission.message,
+            "message": sanitized_message,
             "runner_task_status": submission.runner_task_status,
         }
 
@@ -1706,10 +1709,10 @@ class InMemoryStore:
                     event_payload["released_git_branch"] = released_session.git_branch
             else:
                 record.status = TaskStatus.CANCEL_REQUESTED.value
-            record.runner_message = submission.message or "cancel requested"
+            record.runner_message = sanitized_message or "cancel requested"
             event_type = "task.runner_cancel_requested"
         else:
-            record.runner_message = submission.message or "runner cancel failed"
+            record.runner_message = sanitized_message or "runner cancel failed"
             event_type = "task.runner_cancel_failed"
 
         self._tasks[task_id] = record
@@ -1745,6 +1748,11 @@ class InMemoryStore:
         if record is None:
             raise NotFoundError(f"task {task_id} not found")
 
+        sanitized_message = self._sanitize_sensitive_text(message)
+        sanitized_stdout = self._sanitize_sensitive_text(stdout)
+        sanitized_stderr = self._sanitize_sensitive_text(stderr)
+        sanitized_cleanup_message = self._sanitize_sensitive_text(worktree_cleanup_message)
+
         run_id = self._task_latest_run.get(task_id)
         is_terminal = status in (
             RunnerLifecycleStatus.SUCCESS,
@@ -1752,18 +1760,18 @@ class InMemoryStore:
             RunnerLifecycleStatus.CANCELED,
         )
         record.status = status.value
-        if message is not None:
-            record.runner_message = message
+        if sanitized_message is not None:
+            record.runner_message = sanitized_message
         if started_at is not None:
             record.started_at = started_at
         if status == RunnerLifecycleStatus.RUNNING and record.started_at is None:
             record.started_at = self._utc_now()
         if exit_code is not None:
             record.exit_code = exit_code
-        if stdout is not None:
-            record.stdout = stdout
-        if stderr is not None:
-            record.stderr = stderr
+        if sanitized_stdout is not None:
+            record.stdout = sanitized_stdout
+        if sanitized_stderr is not None:
+            record.stderr = sanitized_stderr
         if finished_at is not None:
             record.finished_at = finished_at
         if is_terminal and record.finished_at is None:
@@ -1776,8 +1784,8 @@ class InMemoryStore:
                 audit.sandbox_container_id = container_id
             if exit_code is not None:
                 audit.sandbox_exit_code = exit_code
-            if status in (RunnerLifecycleStatus.FAILED, RunnerLifecycleStatus.CANCELED) and message is not None:
-                audit.sandbox_error = message
+            if status in (RunnerLifecycleStatus.FAILED, RunnerLifecycleStatus.CANCELED) and sanitized_message is not None:
+                audit.sandbox_error = sanitized_message
             self._audits[task_id] = audit
         elif audit is not None and audit.execution_mode == ExecutionMode.ISOLATED_WORKTREE:
             has_cleanup_update = (
@@ -1789,30 +1797,30 @@ class InMemoryStore:
                 audit.worktree_cleanup_attempted = worktree_cleanup_attempted
             if worktree_cleanup_succeeded is not None:
                 audit.worktree_cleanup_succeeded = worktree_cleanup_succeeded
-            if worktree_cleanup_message is not None:
-                audit.worktree_cleanup_message = worktree_cleanup_message
+            if sanitized_cleanup_message is not None:
+                audit.worktree_cleanup_message = sanitized_cleanup_message
             if has_cleanup_update:
                 audit.worktree_cleanup_at = self._utc_now()
             self._audits[task_id] = audit
 
         event_payload: dict[str, Any] = {
             "status": status.value,
-            "message": message,
+            "message": sanitized_message,
             "exit_code": exit_code,
             "container_id": container_id,
             "worktree_cleanup_attempted": worktree_cleanup_attempted,
             "worktree_cleanup_succeeded": worktree_cleanup_succeeded,
-            "worktree_cleanup_message": worktree_cleanup_message,
+            "worktree_cleanup_message": sanitized_cleanup_message,
         }
         retry_decision: dict[str, Any] | None = None
         if status == RunnerLifecycleStatus.FAILED:
             retry_decision = self._evaluate_retry_for_failure(
                 task_id=task_id,
                 failure_status=TaskStatus.FAILED.value,
-                message=message,
+                message=sanitized_message,
                 exit_code=exit_code,
-                stdout=stdout,
-                stderr=stderr,
+                stdout=sanitized_stdout,
+                stderr=sanitized_stderr,
             )
             event_payload["failure_category"] = retry_decision["failure_category"]
             event_payload["recovery_hint"] = retry_decision["recovery_hint"]
@@ -1857,7 +1865,7 @@ class InMemoryStore:
                 reason=f"runner-status-{status.value}",
                 cleanup_attempted=worktree_cleanup_attempted,
                 cleanup_succeeded=worktree_cleanup_succeeded,
-                cleanup_message=worktree_cleanup_message,
+                cleanup_message=sanitized_cleanup_message,
             )
             if released_session is not None:
                 event_payload["released_worktree_path"] = released_session.worktree_path
@@ -1905,7 +1913,7 @@ class InMemoryStore:
                     payload={
                         "container_id": container_id,
                         "status": status.value,
-                        "message": message,
+                        "message": sanitized_message,
                         "exit_code": exit_code,
                     },
                 )
@@ -4023,6 +4031,10 @@ class InMemoryStore:
             else "",
         ]
         return " ".join(part.strip().lower() for part in parts if part and part.strip())
+
+    @staticmethod
+    def _sanitize_sensitive_text(value: str | None) -> str | None:
+        return redact_sensitive_text(value)
 
     @staticmethod
     def _contains_any(signal: str, keywords: tuple[str, ...]) -> bool:
