@@ -90,6 +90,10 @@ fi
 echo "[e2e] running smoke scenario: $SCENARIO_SCRIPT"
 E2E_API_BASE="${E2E_API_BASE:-http://localhost:48000}" \
 E2E_TIMEOUT_SECONDS="${E2E_TIMEOUT_SECONDS:-90}" \
+E2E_COMPOSE_DIR="$COMPOSE_DIR" \
+E2E_RUNNER_PID="$RUNNER_PID" \
+E2E_HOST_RUNNER_PORT="$HOST_RUNNER_PORT" \
+E2E_RUNNER_HEALTH_URL="$HOST_RUNNER_URL/health" \
 python3 "$COMPOSE_DIR/scripts/$SCENARIO_SCRIPT"
 
 echo "[e2e] completed successfully"

@@ -254,6 +254,17 @@ cmd_stress_smoke() {
   (cd "$COMPOSE_DIR" && E2E_SCENARIO_SCRIPT=parallel_workflow_stress_smoke.py ./scripts/run-e2e.sh)
 }
 
+cmd_race_stress() {
+  require_command python3
+  (cd "$ROOT_DIR" && ./scripts/task-072-race-stress.sh)
+}
+
+cmd_chaos() {
+  require_command python3
+  require_command docker
+  (cd "$ROOT_DIR" && ./scripts/task-071-chaos.sh)
+}
+
 cmd_readiness() {
   require_command python3
   (cd "$ROOT_DIR" && ./scripts/task-061-readiness.sh)
@@ -332,6 +343,8 @@ Commands:
   logs     Show recent host-runner and docker logs
   e2e      Run end-to-end smoke scenario
   stress-smoke Run parallel workflow stress smoke scenario
+  race-stress Run TASK-072 concurrency/race stress suite (alias: stress-race)
+  chaos    Run TASK-071 chaos failure drills scenario
   readiness Run TASK-061 local readiness scenarios and evidence capture
   gate     Run full reliability gate (api+bot+ui+smoke+readiness+e2e)
   desktop  Launch Electron desktop control panel
@@ -353,6 +366,8 @@ main() {
     logs) cmd_logs ;;
     e2e) cmd_e2e ;;
     stress-smoke) cmd_stress_smoke ;;
+    race-stress|stress-race) cmd_race_stress ;;
+    chaos) cmd_chaos ;;
     readiness) cmd_readiness ;;
     gate) cmd_gate ;;
     desktop) cmd_desktop ;;

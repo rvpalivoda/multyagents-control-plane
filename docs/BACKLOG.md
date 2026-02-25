@@ -118,8 +118,8 @@
 
 
 ### EPIC-13 Reliability hardening beyond smoke
-- `TASK-071` (`P0`, `in_progress`): Chaos E2E failure drills
-- `TASK-072` (`P0`, `in_progress`): Concurrency and race-condition stress suite
+- `TASK-071` (`P0`, `done`): Chaos E2E failure drills
+- `TASK-072` (`P0`, `done`): Concurrency and race-condition stress suite
 - `TASK-073` (`P1`, `todo`): Restart persistence invariant tests
 - `TASK-074` (`P1`, `todo`): Security and policy adversarial tests
 - `TASK-075` (`P1`, `todo`): Playwright UI E2E critical journeys
