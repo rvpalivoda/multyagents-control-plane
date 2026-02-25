@@ -58,4 +58,4 @@
   - `cd apps/api && python3 -m py_compile src/multyagents_api/schemas.py src/multyagents_api/store.py src/multyagents_api/main.py tests/test_api_control_loop.py` -> passed.
   - `apps/api`: `.venv/bin/pytest -q tests/test_api_control_loop.py` -> passed.
 - Commits:
-  - `<final-sha>`
+  - `70aff46`

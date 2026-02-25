@@ -71,4 +71,4 @@
 - Verification evidence:
   - `python3 -m py_compile apps/api/src/multyagents_api/schemas.py apps/api/src/multyagents_api/store.py apps/api/tests/test_api_retry_strategy.py apps/api/tests/test_api_runner_status.py apps/api/tests/test_api_workflow_dispatch_ready.py` -> passed.
   - `apps/api`: `.venv/bin/pytest -q tests/test_api_retry_strategy.py tests/test_api_cancel.py tests/test_api_context7.py tests/test_api_runner_status.py` -> passed.
-- Commits: `<final-sha>`
+- Commits: `70aff46`

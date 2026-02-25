@@ -67,4 +67,4 @@
   - assistant intent API tests and docs updates.
 - Verification:
   - `apps/api`: `.venv/bin/pytest -q tests/test_api_assistant_intents.py` -> passed.
-- Commits: `<final-sha>`
+- Commits: `70aff46`
