@@ -109,6 +109,10 @@
 - `TASK-066` (`P1`, `todo`): E2E reliability gate script
 - `TASK-067` (`P1`, `todo`): Failure injection regression pack
 
+### EPIC-12 Test hardening and reliability gates
+- `TASK-068` (`P1`, `in_progress`): UI test stability hardening
+- `TASK-069` (`P1`, `in_progress`): Parallel stress smoke for workflow runs
+
 ## Operating rule
 
 Before starting implementation, create/update task file from template:
