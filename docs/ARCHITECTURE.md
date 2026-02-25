@@ -41,7 +41,7 @@ Suggested transport:
 3. Ready step is queued.
 4. Runner picks task, launches codex session, streams logs/events.
 5. Task emits artifact(s), status changes to success/failure.
-6. Dependent tasks are unlocked.
+6. Dependent tasks are unlocked only when required artifact handoff conditions are satisfied.
 7. Approval gates block until operator decision.
 8. Run completes with final summary.
 
@@ -67,6 +67,12 @@ Artifact schema (minimum):
 - `location`
 - `summary`
 - `producer_task_id`
+
+Task completion handoff schema (minimum):
+- `summary`
+- `next_actions[]`
+- `open_questions[]`
+- `artifacts[]` with `artifact_id` and `is_required`
 
 ## 7. Security model
 

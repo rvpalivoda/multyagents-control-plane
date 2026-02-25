@@ -75,8 +75,8 @@
 ### EPIC-8 Assistant-native multi-agent operations
 - `TASK-046` (`P0`, `done`): Agent-oriented workflow templates (operator + assistant)
 - `TASK-047` (`P0`, `done`): Parallel worktree session manager
-- `TASK-048` (`P0`, `in_progress`): Shared handoff board for agent-to-agent context
-- `TASK-049` (`P1`, `todo`): Recovery playbooks and auto-retry strategy
+- `TASK-048` (`P0`, `done`): Shared handoff board for agent-to-agent context
+- `TASK-049` (`P1`, `in_progress`): Recovery playbooks and auto-retry strategy
 - `TASK-050` (`P1`, `todo`): Assistant-facing orchestration API (chat-friendly)
 
 

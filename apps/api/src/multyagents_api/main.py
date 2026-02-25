@@ -28,6 +28,7 @@ from multyagents_api.schemas import (
     RoleUpdate,
     TaskAudit,
     TaskCreate,
+    TaskHandoffRead,
     TaskLocksReleaseResponse,
     TaskRead,
     WorkflowRunCreate,
@@ -443,9 +444,12 @@ def update_runner_status(
             worktree_cleanup_attempted=payload.worktree_cleanup_attempted,
             worktree_cleanup_succeeded=payload.worktree_cleanup_succeeded,
             worktree_cleanup_message=payload.worktree_cleanup_message,
+            handoff=payload.handoff,
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/tasks/{task_id}/cancel", response_model=TaskRead)
@@ -506,6 +510,23 @@ def reject_approval(approval_id: int, payload: ApprovalDecisionRequest | None = 
 def get_task_audit(task_id: int) -> TaskAudit:
     try:
         return store.get_task_audit(task_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/handoffs", response_model=list[TaskHandoffRead])
+def list_handoffs(
+    run_id: int | None = None,
+    task_id: int | None = None,
+    limit: int = 200,
+) -> list[TaskHandoffRead]:
+    return store.list_handoffs(run_id=run_id, task_id=task_id, limit=limit)
+
+
+@app.get("/tasks/{task_id}/handoff", response_model=TaskHandoffRead)
+def get_task_handoff(task_id: int) -> TaskHandoffRead:
+    try:
+        return store.get_task_handoff(task_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

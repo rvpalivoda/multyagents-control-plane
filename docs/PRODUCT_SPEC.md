@@ -46,6 +46,7 @@ The platform coordinates many autonomous agents for coding and non-coding tasks.
 5. Inter-agent collaboration
 - Event bus for machine-readable events.
 - Artifact exchange (text, files, commits, reports).
+- Structured task-completion handoff payload (`summary`, `next_actions`, `required artifacts`) for downstream steps.
 - Optional direct handoff by dependency links in DAG.
 
 6. Git integration

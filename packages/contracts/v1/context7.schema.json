@@ -89,6 +89,51 @@
       },
       "additionalProperties": false
     },
+    "TaskHandoffArtifactRef": {
+      "type": "object",
+      "required": ["artifact_id", "is_required", "note"],
+      "properties": {
+        "artifact_id": { "type": "integer", "minimum": 1 },
+        "is_required": { "type": "boolean" },
+        "note": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "TaskHandoffRead": {
+      "type": "object",
+      "required": [
+        "task_id",
+        "run_id",
+        "summary",
+        "details",
+        "next_actions",
+        "open_questions",
+        "artifacts",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "task_id": { "type": "integer", "minimum": 1 },
+        "run_id": { "type": ["integer", "null"], "minimum": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "details": { "type": ["string", "null"] },
+        "next_actions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "open_questions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "artifacts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/TaskHandoffArtifactRef" }
+        },
+        "created_at": { "type": "string", "minLength": 1 },
+        "updated_at": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
     "TaskAudit": {
       "type": "object",
       "required": [
@@ -101,7 +146,8 @@
         "requires_approval",
         "approval_status",
         "project_id",
-        "lock_paths"
+        "lock_paths",
+        "handoff"
       ],
       "properties": {
         "task_id": { "type": "integer", "minimum": 1 },
@@ -121,6 +167,9 @@
         "lock_paths": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
+        },
+        "handoff": {
+          "anyOf": [{ "$ref": "#/$defs/TaskHandoffRead" }, { "type": "null" }]
         }
       },
       "additionalProperties": false
@@ -168,6 +217,10 @@
                 { "$ref": "#/$defs/SharedWorkspaceContext" },
                 { "type": "null" }
               ]
+            },
+            "handoff_context": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/TaskHandoffRead" }
             }
           },
           "additionalProperties": false

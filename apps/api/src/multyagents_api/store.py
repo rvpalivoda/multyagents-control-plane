@@ -33,6 +33,8 @@ from multyagents_api.schemas import (
     RunnerWorkspaceContext,
     RunnerSubmitPayload,
     TaskAudit,
+    TaskHandoffPayload,
+    TaskHandoffRead,
     TaskCreate,
     TaskRead,
     TaskStatus,
@@ -163,6 +165,7 @@ class InMemoryStore:
         self._isolated_worktree_locks: dict[str, int] = {}
         self._isolated_branch_locks: dict[str, int] = {}
         self._audits: dict[int, TaskAudit] = {}
+        self._handoffs: dict[int, TaskHandoffRead] = {}
         self._events: list[EventRead] = []
         self._artifacts: list[ArtifactRead] = []
         self._project_seq = 1
@@ -475,6 +478,8 @@ class InMemoryStore:
 
         dependency_blocked = False
         artifact_blocked = False
+        blocked_task_id: int | None = None
+        blocked_requirements: list[dict[str, Any]] = []
         for task_id in run.task_ids:
             task = self._tasks.get(task_id)
             if task is None:
@@ -488,9 +493,15 @@ class InMemoryStore:
                 and self._tasks[dep_task_id].status == TaskStatus.SUCCESS.value
                 for dep_task_id in dependencies
             ):
-                consumed_artifact_ids = self._resolve_handoff_artifacts(run_id=run.id, task_id=task_id)
+                consumed_artifact_ids, missing_requirements = self._resolve_handoff_artifacts(
+                    run_id=run.id,
+                    task_id=task_id,
+                )
                 if consumed_artifact_ids is None:
                     artifact_blocked = True
+                    if blocked_task_id is None:
+                        blocked_task_id = task_id
+                        blocked_requirements = missing_requirements
                     continue
                 return task_id, None, consumed_artifact_ids
             dependency_blocked = True
@@ -498,7 +509,14 @@ class InMemoryStore:
         if dependency_blocked:
             return None, "dependencies not satisfied", []
         if artifact_blocked:
-            return None, "artifacts not satisfied", []
+            if blocked_task_id is not None:
+                self._append_event(
+                    event_type="task.dispatch_blocked_missing_handoff_artifacts",
+                    run_id=run_id,
+                    task_id=blocked_task_id,
+                    payload={"missing_requirements": blocked_requirements},
+                )
+            return None, "required handoff artifacts missing", []
         return None, "no ready tasks", []
 
     def create_event(self, event: EventCreate) -> EventRead:
@@ -596,6 +614,32 @@ class InMemoryStore:
             and (artifact_type is None or artifact.artifact_type == artifact_type)
         ]
         return filtered[-limit:]
+
+    def list_handoffs(
+        self,
+        *,
+        run_id: int | None = None,
+        task_id: int | None = None,
+        limit: int = 200,
+    ) -> list[TaskHandoffRead]:
+        if limit <= 0:
+            return []
+        filtered = [
+            handoff
+            for handoff in self._handoffs.values()
+            if (run_id is None or handoff.run_id == run_id)
+            and (task_id is None or handoff.task_id == task_id)
+        ]
+        filtered.sort(key=lambda item: item.updated_at)
+        return filtered[-limit:]
+
+    def get_task_handoff(self, task_id: int) -> TaskHandoffRead:
+        if task_id not in self._tasks:
+            raise NotFoundError(f"task {task_id} not found")
+        handoff = self._handoffs.get(task_id)
+        if handoff is None:
+            raise NotFoundError(f"handoff for task {task_id} not found")
+        return handoff
 
     def create_role(self, role: RoleCreate) -> RoleRead:
         self._validate_role_skill_packs(role.skill_packs)
@@ -791,6 +835,7 @@ class InMemoryStore:
             if task.execution_mode == ExecutionMode.DOCKER_SANDBOX
             else None
         )
+        handoff_context = self._build_handoff_context(run_id=run_id, task_id=task.id)
 
         payload = RunnerSubmitPayload(
             task_id=task.id,
@@ -802,6 +847,7 @@ class InMemoryStore:
             context=RunnerContext(enabled=resolved),
             workspace=workspace,
             sandbox=sandbox,
+            handoff_context=handoff_context,
         )
 
         if consumed_artifact_ids is None:
@@ -831,6 +877,7 @@ class InMemoryStore:
             sandbox_container_id=None,
             sandbox_exit_code=None,
             sandbox_error=None,
+            handoff=self._handoffs.get(task.id),
             consumed_artifact_ids=consumed_artifact_ids,
         )
         record = self._tasks.get(task.id)
@@ -849,6 +896,7 @@ class InMemoryStore:
                 "context7_enabled": resolved,
                 "requires_approval": task.requires_approval,
                 "consumed_artifact_ids": consumed_artifact_ids,
+                "handoff_context_task_ids": [item.task_id for item in handoff_context],
                 "task_run_id": task_run_id,
                 "worktree_path": workspace.worktree_path if workspace is not None else None,
                 "git_branch": workspace.git_branch if workspace is not None else None,
@@ -981,6 +1029,7 @@ class InMemoryStore:
         worktree_cleanup_attempted: bool | None = None,
         worktree_cleanup_succeeded: bool | None = None,
         worktree_cleanup_message: str | None = None,
+        handoff: TaskHandoffPayload | None = None,
     ) -> TaskRead:
         record = self._tasks.get(task_id)
         if record is None:
@@ -1045,6 +1094,24 @@ class InMemoryStore:
             "worktree_cleanup_succeeded": worktree_cleanup_succeeded,
             "worktree_cleanup_message": worktree_cleanup_message,
         }
+
+        if handoff is not None and not is_terminal:
+            raise ValidationError("handoff payload is accepted only for terminal task status updates")
+        if handoff is not None:
+            saved_handoff = self._upsert_task_handoff(
+                task_id=task_id,
+                run_id=run_id,
+                handoff=handoff,
+            )
+            event_payload["handoff_updated_at"] = saved_handoff.updated_at
+            event_payload["handoff_required_artifact_ids"] = [
+                item.artifact_id for item in saved_handoff.artifacts if item.is_required
+            ]
+            audit = self._audits.get(task_id)
+            if audit is not None:
+                audit.handoff = saved_handoff
+                self._audits[task_id] = audit
+
         if is_terminal:
             released_paths = self._release_task_locks_internal(task_id=task_id, run_id=run_id, emit_event=True)
             event_payload["released_paths"] = released_paths
@@ -1141,15 +1208,16 @@ class InMemoryStore:
         self._persist_state()
         return released_paths
 
-    def _resolve_handoff_artifacts(self, *, run_id: int, task_id: int) -> list[int] | None:
+    def _resolve_handoff_artifacts(self, *, run_id: int, task_id: int) -> tuple[list[int] | None, list[dict[str, Any]]]:
         run = self._workflow_runs.get(run_id)
         if run is None:
             raise NotFoundError(f"workflow run {run_id} not found")
         requirements = run.step_artifact_requirements.get(task_id, [])
         if not requirements:
-            return []
+            return [], []
 
         resolved_artifact_ids: list[int] = []
+        missing_requirements: list[dict[str, Any]] = []
         for requirement in requirements:
             from_task_ids = {int(value) for value in requirement.get("from_task_ids", [])}
             expected_type = requirement.get("artifact_type")
@@ -1163,15 +1231,57 @@ class InMemoryStore:
                 and self._artifact_has_label(artifact, expected_label)
             ]
             if not matched:
-                return None
-            resolved_artifact_ids.extend(artifact.id for artifact in matched)
+                missing_requirements.append(
+                    {
+                        "from_task_ids": sorted(from_task_ids),
+                        "artifact_type": expected_type,
+                        "label": expected_label,
+                        "reason": "no matching artifacts",
+                    }
+                )
+                return None, missing_requirements
+
+            required_handoff_artifact_ids = self._required_handoff_artifact_ids(
+                run_id=run_id,
+                from_task_ids=from_task_ids,
+            )
+            matched_required_ids = [
+                artifact.id
+                for artifact in matched
+                if artifact.id in required_handoff_artifact_ids
+            ]
+            if not matched_required_ids:
+                missing_requirements.append(
+                    {
+                        "from_task_ids": sorted(from_task_ids),
+                        "artifact_type": expected_type,
+                        "label": expected_label,
+                        "required_handoff_artifact_ids": sorted(required_handoff_artifact_ids),
+                        "reason": "matching artifacts are not marked required in handoff",
+                    }
+                )
+                return None, missing_requirements
+            resolved_artifact_ids.extend(matched_required_ids)
 
         deduplicated: list[int] = []
         for artifact_id in resolved_artifact_ids:
             if artifact_id in deduplicated:
                 continue
             deduplicated.append(artifact_id)
-        return deduplicated
+        return deduplicated, []
+
+    def _required_handoff_artifact_ids(self, *, run_id: int, from_task_ids: set[int]) -> set[int]:
+        required_artifact_ids: set[int] = set()
+        for from_task_id in from_task_ids:
+            handoff = self._handoffs.get(from_task_id)
+            if handoff is None:
+                continue
+            if handoff.run_id != run_id:
+                continue
+            for artifact in handoff.artifacts:
+                if artifact.is_required:
+                    required_artifact_ids.add(artifact.artifact_id)
+        return required_artifact_ids
 
     @staticmethod
     def _artifact_has_label(artifact: ArtifactRead, expected_label: str | None) -> bool:
@@ -1301,6 +1411,76 @@ class InMemoryStore:
         if run_id is None:
             return f"standalone:task-{task_id}"
         return f"run-{run_id}:task-{task_id}"
+
+    def _build_handoff_context(self, *, run_id: int | None, task_id: int) -> list[TaskHandoffRead]:
+        if run_id is None:
+            return []
+        run = self._workflow_runs.get(run_id)
+        if run is None:
+            return []
+        dependency_task_ids = run.step_dependencies.get(task_id, [])
+        context: list[TaskHandoffRead] = []
+        for dependency_task_id in dependency_task_ids:
+            handoff = self._handoffs.get(dependency_task_id)
+            if handoff is None:
+                continue
+            if handoff.run_id != run_id:
+                continue
+            context.append(handoff)
+        return context
+
+    def _upsert_task_handoff(
+        self,
+        *,
+        task_id: int,
+        run_id: int | None,
+        handoff: TaskHandoffPayload,
+    ) -> TaskHandoffRead:
+        known_artifacts_by_id = {artifact.id: artifact for artifact in self._artifacts}
+        for artifact_ref in handoff.artifacts:
+            artifact = known_artifacts_by_id.get(artifact_ref.artifact_id)
+            if artifact is None:
+                raise ValidationError(f"handoff artifact {artifact_ref.artifact_id} not found")
+            if artifact.producer_task_id != task_id:
+                raise ValidationError(
+                    f"handoff artifact {artifact_ref.artifact_id} must be produced by task {task_id}"
+                )
+            if run_id is not None and artifact.run_id != run_id:
+                raise ValidationError(
+                    f"handoff artifact {artifact_ref.artifact_id} must belong to workflow run {run_id}"
+                )
+
+        now = self._utc_now()
+        existing = self._handoffs.get(task_id)
+        created_at = existing.created_at if existing is not None else now
+        saved = TaskHandoffRead(
+            task_id=task_id,
+            run_id=run_id,
+            summary=handoff.summary,
+            details=handoff.details,
+            next_actions=handoff.next_actions,
+            open_questions=handoff.open_questions,
+            artifacts=handoff.artifacts,
+            created_at=created_at,
+            updated_at=now,
+        )
+        self._handoffs[task_id] = saved
+        self._append_event(
+            event_type="task.handoff_published",
+            run_id=run_id,
+            task_id=task_id,
+            payload={
+                "summary": saved.summary,
+                "details": saved.details,
+                "next_actions": saved.next_actions,
+                "open_questions": saved.open_questions,
+                "artifacts": [artifact.model_dump() for artifact in saved.artifacts],
+                "required_artifact_ids": [
+                    artifact.artifact_id for artifact in saved.artifacts if artifact.is_required
+                ],
+            },
+        )
+        return saved
 
     def _build_isolated_session_identifiers(
         self,
@@ -1802,6 +1982,10 @@ class InMemoryStore:
             int(key): TaskAudit(**value)
             for key, value in data.get("audits", {}).items()
         }
+        self._handoffs = {
+            int(key): TaskHandoffRead(**value)
+            for key, value in data.get("handoffs", {}).items()
+        }
         self._events = [EventRead(**event) for event in data.get("events", [])]
         self._artifacts = [ArtifactRead(**artifact) for artifact in data.get("artifacts", [])]
 
@@ -1841,6 +2025,7 @@ class InMemoryStore:
             "approvals": {str(key): value.__dict__ for key, value in self._approvals.items()},
             "task_approval": {str(key): value for key, value in self._task_approval.items()},
             "audits": {str(key): value.model_dump() for key, value in self._audits.items()},
+            "handoffs": {str(key): value.model_dump() for key, value in self._handoffs.items()},
             "events": [event.model_dump() for event in self._events],
             "artifacts": [artifact.model_dump() for artifact in self._artifacts],
             "sequences": {

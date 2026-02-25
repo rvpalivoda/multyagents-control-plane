@@ -47,6 +47,9 @@ def test_status_command_calls_api(monkeypatch) -> None:
     class _FakeResponse:
         status_code = 200
 
+        def json(self) -> dict[str, object]:
+            return {"id": "run-7", "status": "running", "retry_summary": {"total_retries": 0}}
+
     def fake_request(*, method, url, json, timeout):  # noqa: ANN001
         assert method == "GET"
         assert url.endswith("/workflow-runs/run-7")
@@ -63,6 +66,40 @@ def test_status_command_calls_api(monkeypatch) -> None:
     assert body["ok"] is True
     assert body["api_method"] == "GET"
     assert body["api_path"] == "/workflow-runs/run-7"
+    assert body["message"] == "run run-7: running (retries=0)"
+
+
+def test_status_command_surfaces_triage_hints(monkeypatch) -> None:
+    class _FakeResponse:
+        status_code = 200
+
+        def json(self) -> dict[str, object]:
+            return {
+                "id": 42,
+                "status": "failed",
+                "retry_summary": {"total_retries": 3},
+                "failure_triage_hints": [
+                    "Network/timeout failure detected. Verify host-runner connectivity and retry."
+                ],
+            }
+
+    def fake_request(*, method, url, json, timeout):  # noqa: ANN001
+        assert method == "GET"
+        assert url.endswith("/workflow-runs/42")
+        assert json is None
+        assert timeout == 5.0
+        return _FakeResponse()
+
+    monkeypatch.setattr("multyagents_telegram_bot.main.httpx.request", fake_request)
+
+    response = client.post("/telegram/command", json={"text": "/status 42"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["triage_hints"] == [
+        "Network/timeout failure detected. Verify host-runner connectivity and retry."
+    ]
+    assert "hint:" in body["message"]
 
 
 def test_run_command_calls_workflow_runs_with_body(monkeypatch) -> None:

@@ -272,14 +272,6 @@ def test_workflow_integration_artifact_handoff_chain() -> None:
     assert code_dispatch.json()["dispatched"] is True
     assert code_dispatch.json()["task_id"] == code_task_id
 
-    code_success = client.post(f"/runner/tasks/{code_task_id}/status", json={"status": "success"})
-    assert code_success.status_code == 200
-
-    blocked_report = client.post(f"/workflow-runs/{run_id}/dispatch-ready")
-    assert blocked_report.status_code == 200
-    assert blocked_report.json()["dispatched"] is False
-    assert blocked_report.json()["reason"] == "artifacts not satisfied"
-
     handoff_artifact = client.post(
         "/artifacts",
         json={
@@ -293,6 +285,25 @@ def test_workflow_integration_artifact_handoff_chain() -> None:
     )
     assert handoff_artifact.status_code == 200
     handoff_artifact_id = handoff_artifact.json()["id"]
+
+    code_success = client.post(
+        f"/runner/tasks/{code_task_id}/status",
+        json={
+            "status": "success",
+            "handoff": {
+                "summary": "code step complete",
+                "next_actions": ["run report step"],
+                "artifacts": [
+                    {
+                        "artifact_id": handoff_artifact_id,
+                        "is_required": True,
+                        "note": "handoff report",
+                    }
+                ],
+            },
+        },
+    )
+    assert code_success.status_code == 200
 
     report_dispatch = client.post(f"/workflow-runs/{run_id}/dispatch-ready")
     assert report_dispatch.status_code == 200

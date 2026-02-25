@@ -36,6 +36,52 @@ type RunsCenterSectionProps = {
   onSelectRun: (runId: number) => void;
 };
 
+type HandoffBoardItem = {
+  eventId: number;
+  taskId: number | null;
+  createdAt: string;
+  summary: string;
+  details: string | null;
+  nextActions: string[];
+  openQuestions: string[];
+  requiredArtifactIds: number[];
+};
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function toNumberArray(value: unknown): number[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is number => typeof item === "number");
+}
+
+function buildHandoffBoard(events: EventRead[]): HandoffBoardItem[] {
+  const items = events
+    .filter((event) => event.event_type === "task.handoff_published")
+    .map((event) => {
+      const payload = event.payload as Record<string, unknown>;
+      const summaryRaw = payload["summary"];
+      return {
+        eventId: event.id,
+        taskId: event.task_id,
+        createdAt: event.created_at,
+        summary: typeof summaryRaw === "string" ? summaryRaw : "",
+        details: typeof payload["details"] === "string" ? payload["details"] : null,
+        nextActions: toStringArray(payload["next_actions"]),
+        openQuestions: toStringArray(payload["open_questions"]),
+        requiredArtifactIds: toNumberArray(payload["required_artifact_ids"])
+      };
+    })
+    .filter((item) => item.summary.length > 0);
+  return items.sort((left, right) => left.eventId - right.eventId);
+}
+
 export function RunsCenterSection(props: RunsCenterSectionProps) {
   const {
     sectionClass,
@@ -70,6 +116,7 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
     onDispatchReadyTask,
     onSelectRun
   } = props;
+  const handoffBoard = buildHandoffBoard(timelineEvents);
 
   return (
     <section className={sectionClass}>
@@ -197,6 +244,35 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
               {JSON.stringify(runDispatchResult, null, 2)}
             </pre>
           )}
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <p className={labelClass}>Handoff board</p>
+            {handoffBoard.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-500">No handoff payloads in timeline yet.</p>
+            ) : (
+              <ul className="mt-2 space-y-2 text-sm text-slate-700">
+                {handoffBoard.map((item) => (
+                  <li key={item.eventId} className="rounded-md border border-slate-200 bg-white p-2">
+                    <p className="font-medium">
+                      Task #{item.taskId ?? "-"} at {item.createdAt}
+                    </p>
+                    <p className="mt-1">{item.summary}</p>
+                    {item.details && <p className="mt-1 text-xs text-slate-600">{item.details}</p>}
+                    {item.nextActions.length > 0 && (
+                      <p className="mt-1 text-xs text-slate-600">Next actions: {item.nextActions.join(" | ")}</p>
+                    )}
+                    {item.openQuestions.length > 0 && (
+                      <p className="mt-1 text-xs text-slate-600">Open questions: {item.openQuestions.join(" | ")}</p>
+                    )}
+                    <p className="mt-1 text-xs text-slate-600">
+                      Required artifacts: {item.requiredArtifactIds.length > 0 ? item.requiredArtifactIds.join(", ") : "-"}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           <pre className="max-h-64 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
             {JSON.stringify(timelineEvents, null, 2)}
           </pre>

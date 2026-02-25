@@ -69,6 +69,18 @@ Includes run timeline support:
 - run status rollup:
   - auto `running/success/failed` based on task lifecycle outcomes
   - manual `aborted` remains authoritative
+- auto-retry + recovery hints:
+  - retry policy sources:
+    - role-level: `execution_constraints.retry_policy`
+    - step-level override: workflow step `retry_policy`
+  - retry policy shape:
+    - `max_retries` (0..10)
+    - `retry_on` (`network`, `flaky-test`, `runner-transient`)
+  - transient failures (`submit-failed` or runner `failed`) can auto-schedule retry
+  - workflow run payload includes:
+    - `retry_summary`
+    - `failure_categories`
+    - `failure_triage_hints`
 
 Task runtime control:
 - `GET /tasks` with optional `run_id` filter

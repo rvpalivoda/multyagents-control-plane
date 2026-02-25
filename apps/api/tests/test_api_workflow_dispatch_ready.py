@@ -137,14 +137,6 @@ def test_dispatch_ready_waits_for_required_handoff_artifacts(monkeypatch) -> Non
     assert first_dispatch.json()["dispatched"] is True
     assert first_dispatch.json()["task_id"] == first_task_id
 
-    first_success = client.post(f"/runner/tasks/{first_task_id}/status", json={"status": "success"})
-    assert first_success.status_code == 200
-
-    blocked = client.post(f"/workflow-runs/{run_id}/dispatch-ready")
-    assert blocked.status_code == 200
-    assert blocked.json()["dispatched"] is False
-    assert blocked.json()["reason"] == "artifacts not satisfied"
-
     wrong_artifact = client.post(
         "/artifacts",
         json={
@@ -158,10 +150,29 @@ def test_dispatch_ready_waits_for_required_handoff_artifacts(monkeypatch) -> Non
     )
     assert wrong_artifact.status_code == 200
 
-    still_blocked = client.post(f"/workflow-runs/{run_id}/dispatch-ready")
-    assert still_blocked.status_code == 200
-    assert still_blocked.json()["dispatched"] is False
-    assert still_blocked.json()["reason"] == "artifacts not satisfied"
+    first_success = client.post(
+        f"/runner/tasks/{first_task_id}/status",
+        json={
+            "status": "success",
+            "handoff": {
+                "summary": "draft handoff",
+                "next_actions": ["write final report"],
+                "artifacts": [
+                    {
+                        "artifact_id": wrong_artifact.json()["id"],
+                        "is_required": False,
+                        "note": "draft output",
+                    }
+                ],
+            },
+        },
+    )
+    assert first_success.status_code == 200
+
+    blocked = client.post(f"/workflow-runs/{run_id}/dispatch-ready")
+    assert blocked.status_code == 200
+    assert blocked.json()["dispatched"] is False
+    assert blocked.json()["reason"] == "required handoff artifacts missing"
 
     required_artifact = client.post(
         "/artifacts",
@@ -177,6 +188,27 @@ def test_dispatch_ready_waits_for_required_handoff_artifacts(monkeypatch) -> Non
     assert required_artifact.status_code == 200
     handoff_artifact_id = required_artifact.json()["id"]
 
+    updated_handoff = client.post(
+        f"/runner/tasks/{first_task_id}/status",
+        json={
+            "status": "success",
+            "handoff": {
+                "summary": "final handoff",
+                "details": "ready for report step",
+                "next_actions": ["dispatch report step"],
+                "open_questions": ["none"],
+                "artifacts": [
+                    {
+                        "artifact_id": handoff_artifact_id,
+                        "is_required": True,
+                        "note": "required report handoff",
+                    }
+                ],
+            },
+        },
+    )
+    assert updated_handoff.status_code == 200
+
     second_dispatch = client.post(f"/workflow-runs/{run_id}/dispatch-ready")
     assert second_dispatch.status_code == 200
     assert second_dispatch.json()["dispatched"] is True
@@ -191,5 +223,9 @@ def test_dispatch_ready_waits_for_required_handoff_artifacts(monkeypatch) -> Non
     assert dispatch_events.status_code == 200
     assert any(
         handoff_artifact_id in item["payload"].get("consumed_artifact_ids", [])
+        for item in dispatch_events.json()
+    )
+    assert any(
+        first_task_id in item["payload"].get("handoff_context_task_ids", [])
         for item in dispatch_events.json()
     )

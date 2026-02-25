@@ -42,6 +42,7 @@ class CommandResponse(BaseModel):
     api_method: str | None = None
     api_path: str | None = None
     api_status: int | None = None
+    triage_hints: list[str] = Field(default_factory=list)
 
 
 @app.get("/health")
@@ -117,14 +118,21 @@ def _process_command(text: str) -> CommandResponse:
     try:
         response = _call_api(route.method, api_path, body)
         if 200 <= response.status_code < 300:
+            message = f"{command} accepted"
+            triage_hints: list[str] = []
+            if command == "status":
+                status_message, hints = _build_status_message(response)
+                message = status_message
+                triage_hints = hints
             return CommandResponse(
                 handled=True,
                 command=command,
                 ok=True,
-                message=f"{command} accepted",
+                message=message,
                 api_method=route.method,
                 api_path=api_path,
                 api_status=response.status_code,
+                triage_hints=triage_hints,
             )
         return CommandResponse(
             handled=True,
@@ -165,3 +173,36 @@ def _parse_command(text: str) -> tuple[str | None, list[str]]:
 def _call_api(method: str, path: str, body: dict | None) -> httpx.Response:
     base = _api_base_url().rstrip("/")
     return httpx.request(method=method, url=f"{base}{path}", json=body, timeout=5.0)
+
+
+def _build_status_message(response: httpx.Response) -> tuple[str, list[str]]:
+    try:
+        payload = response.json()
+    except Exception:  # noqa: BLE001
+        return "status accepted", []
+    if not isinstance(payload, dict):
+        return "status accepted", []
+
+    run_id = payload.get("id")
+    run_status = payload.get("status")
+    retries = payload.get("retry_summary")
+    triage_raw = payload.get("failure_triage_hints")
+    triage_hints = [item for item in triage_raw if isinstance(item, str)] if isinstance(triage_raw, list) else []
+
+    retry_total: int | None = None
+    if isinstance(retries, dict):
+        value = retries.get("total_retries")
+        if isinstance(value, int):
+            retry_total = value
+
+    label = "run status"
+    if run_id is not None and run_status is not None:
+        label = f"run {run_id}: {run_status}"
+    elif run_status is not None:
+        label = f"run: {run_status}"
+
+    if retry_total is not None:
+        label = f"{label} (retries={retry_total})"
+    if triage_hints:
+        label = f"{label}. hint: {triage_hints[0]}"
+    return label, triage_hints

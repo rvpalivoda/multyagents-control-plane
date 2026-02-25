@@ -152,3 +152,111 @@ def test_event_and_artifact_reject_unsupported_contract_version() -> None:
         },
     )
     assert bad_artifact_version.status_code == 422
+
+
+def test_task_completion_handoff_is_persisted_and_visible_in_timeline() -> None:
+    role_id = _create_role("handoff-events-role")
+    task = client.post(
+        "/tasks",
+        json={
+            "role_id": role_id,
+            "title": "handoff source task",
+            "execution_mode": "no-workspace",
+        },
+    )
+    assert task.status_code == 200
+    task_id = task.json()["id"]
+
+    run = client.post("/workflow-runs", json={"task_ids": [task_id], "initiated_by": "handoff-events"})
+    assert run.status_code == 200
+    run_id = run.json()["id"]
+
+    assert client.post(f"/tasks/{task_id}/dispatch").status_code == 200
+
+    artifact = client.post(
+        "/artifacts",
+        json={
+            "artifact_type": "report",
+            "location": "/tmp/multyagents/handoff/events-report.md",
+            "summary": "handoff report",
+            "producer_task_id": task_id,
+            "run_id": run_id,
+            "metadata": {"label": "handoff"},
+        },
+    )
+    assert artifact.status_code == 200
+    artifact_id = artifact.json()["id"]
+
+    status = client.post(
+        f"/runner/tasks/{task_id}/status",
+        json={
+            "status": "success",
+            "handoff": {
+                "summary": "task completed with report artifact",
+                "details": "report is ready for downstream step",
+                "next_actions": ["dispatch dependent task"],
+                "open_questions": ["none"],
+                "artifacts": [
+                    {
+                        "artifact_id": artifact_id,
+                        "is_required": True,
+                        "note": "required downstream input",
+                    }
+                ],
+            },
+        },
+    )
+    assert status.status_code == 200
+    assert status.json()["status"] == "success"
+
+    handoff = client.get(f"/tasks/{task_id}/handoff")
+    assert handoff.status_code == 200
+    handoff_body = handoff.json()
+    assert handoff_body["task_id"] == task_id
+    assert handoff_body["run_id"] == run_id
+    assert handoff_body["summary"] == "task completed with report artifact"
+    assert handoff_body["artifacts"][0]["artifact_id"] == artifact_id
+    assert handoff_body["artifacts"][0]["is_required"] is True
+
+    audit = client.get(f"/tasks/{task_id}/audit")
+    assert audit.status_code == 200
+    assert audit.json()["handoff"]["summary"] == "task completed with report artifact"
+
+    events = client.get(f"/events?task_id={task_id}&event_type=task.handoff_published&limit=100")
+    assert events.status_code == 200
+    assert any(
+        artifact_id in item["payload"].get("required_artifact_ids", [])
+        for item in events.json()
+    )
+
+
+def test_task_completion_handoff_rejects_unknown_artifact_reference() -> None:
+    role_id = _create_role("handoff-invalid-artifact-role")
+    task = client.post(
+        "/tasks",
+        json={
+            "role_id": role_id,
+            "title": "handoff invalid artifact task",
+            "execution_mode": "no-workspace",
+        },
+    )
+    assert task.status_code == 200
+    task_id = task.json()["id"]
+
+    run = client.post("/workflow-runs", json={"task_ids": [task_id], "initiated_by": "handoff-invalid"})
+    assert run.status_code == 200
+
+    assert client.post(f"/tasks/{task_id}/dispatch").status_code == 200
+
+    status = client.post(
+        f"/runner/tasks/{task_id}/status",
+        json={
+            "status": "success",
+            "handoff": {
+                "summary": "attempt invalid handoff",
+                "artifacts": [{"artifact_id": 999999, "is_required": True}],
+            },
+        },
+    )
+    assert status.status_code == 422
+    assert "handoff artifact 999999 not found" in status.json()["detail"]

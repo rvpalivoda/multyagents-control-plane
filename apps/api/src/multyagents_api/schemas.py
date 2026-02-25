@@ -195,6 +195,37 @@ class RunnerWorkspaceContext(BaseModel):
     git_branch: str | None = None
 
 
+class TaskHandoffArtifactRef(BaseModel):
+    artifact_id: int = Field(ge=1)
+    is_required: bool = False
+    note: str | None = None
+
+
+class TaskHandoffPayload(BaseModel):
+    summary: str = Field(min_length=1)
+    details: str | None = None
+    next_actions: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    artifacts: list[TaskHandoffArtifactRef] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def normalize_text_fields(self) -> "TaskHandoffPayload":
+        self.summary = self.summary.strip()
+        if self.details is not None:
+            trimmed_details = self.details.strip()
+            self.details = trimmed_details if trimmed_details else None
+        self.next_actions = _normalize_string_list(self.next_actions)
+        self.open_questions = _normalize_string_list(self.open_questions)
+        return self
+
+
+class TaskHandoffRead(TaskHandoffPayload):
+    task_id: int
+    run_id: int | None = None
+    created_at: str
+    updated_at: str
+
+
 class SandboxMount(BaseModel):
     source: str = Field(min_length=1)
     target: str = Field(min_length=1)
@@ -237,6 +268,7 @@ class RunnerSubmitPayload(BaseModel):
     context: RunnerContext
     workspace: RunnerWorkspaceContext | None = None
     sandbox: SandboxConfig | None = None
+    handoff_context: list[TaskHandoffRead] = Field(default_factory=list)
 
 
 class RunnerSubmission(BaseModel):
@@ -283,6 +315,7 @@ class RunnerStatusUpdate(BaseModel):
     worktree_cleanup_attempted: bool | None = None
     worktree_cleanup_succeeded: bool | None = None
     worktree_cleanup_message: str | None = None
+    handoff: TaskHandoffPayload | None = None
 
 
 class TaskAudit(BaseModel):
@@ -309,6 +342,7 @@ class TaskAudit(BaseModel):
     sandbox_container_id: str | None = None
     sandbox_exit_code: int | None = None
     sandbox_error: str | None = None
+    handoff: TaskHandoffRead | None = None
     consumed_artifact_ids: list[int] = Field(default_factory=list)
     produced_artifact_ids: list[int] = Field(default_factory=list)
     recent_event_ids: list[int] = Field(default_factory=list)

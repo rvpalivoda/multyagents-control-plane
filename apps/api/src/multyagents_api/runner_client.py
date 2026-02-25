@@ -51,6 +51,8 @@ def submit_to_runner(payload: RunnerSubmitPayload) -> RunnerSubmission:
             request_payload["workspace"]["git_branch"] = payload.workspace.git_branch
     if payload.sandbox is not None:
         request_payload["sandbox"] = payload.sandbox.model_dump()
+    if payload.handoff_context:
+        request_payload["handoff_context"] = [item.model_dump() for item in payload.handoff_context]
 
     try:
         response = httpx.post(

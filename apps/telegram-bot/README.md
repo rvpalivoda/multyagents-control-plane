@@ -11,7 +11,7 @@ This stage provides:
 
 Supported commands:
 - `/run <workflow_template_id>`
-- `/status <run_id>`
+- `/status <run_id>` (returns run state plus recovery hints when failed)
 - `/next <run_id>`
 - `/cancel <task_id>`
 - `/approve <approval_id>`

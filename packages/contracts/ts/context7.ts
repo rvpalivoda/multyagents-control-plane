@@ -43,6 +43,24 @@ export type TaskRead = {
   exit_code: number | null;
 };
 
+export type TaskHandoffArtifactRef = {
+  artifact_id: number;
+  is_required: boolean;
+  note: string | null;
+};
+
+export type TaskHandoffRead = {
+  task_id: number;
+  run_id: number | null;
+  summary: string;
+  details: string | null;
+  next_actions: string[];
+  open_questions: string[];
+  artifacts: TaskHandoffArtifactRef[];
+  created_at: string;
+  updated_at: string;
+};
+
 export type TaskAudit = {
   task_id: number;
   role_id: number;
@@ -54,6 +72,7 @@ export type TaskAudit = {
   approval_status: ApprovalStatus | null;
   project_id: number | null;
   lock_paths: string[];
+  handoff: TaskHandoffRead | null;
 };
 
 export type WorkflowRunRead = {
