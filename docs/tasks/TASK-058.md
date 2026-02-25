@@ -74,4 +74,4 @@
 - Verification:
   - `apps/api`: `.venv/bin/pytest -q tests/test_api_control_loop.py tests/test_api_partial_rerun.py tests/test_api_quality_gates.py tests/test_api_run_rollup.py tests/test_api_retry_strategy.py` -> passed (14).
   - `apps/ui`: `npm run build` -> passed.
-- Commits: `<final-sha>`
+- Commits: `a3f2636`
