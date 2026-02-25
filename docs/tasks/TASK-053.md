@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `todo`
+- Status: `done`
 - Priority: `P2`
 - Owner: `codex`
 - Created: `2026-02-25`
@@ -27,13 +27,18 @@
 
 ## Acceptance criteria
 
-- [ ] Реализовано минимально полезно для ежедневной работы.
-- [ ] Покрыто тестами/валидацией.
+- [x] Реализовано минимально полезно для ежедневной работы.
+- [x] Покрыто тестами/валидацией.
 
 ## Test plan
 
-- [ ] Targeted tests + smoke.
+- [x] Targeted tests + smoke.
 
 ## Result
 
-- Commits: `<sha1>`
+- Implemented template recommendation endpoint and scoring logic (intent + optional historical success heuristics).
+- Added workflow UI recommendation panel with prompt, detected intents, ranked template list, and one-click apply.
+- Validation:
+  - `apps/api`: `.venv/bin/pytest -q tests/test_api_template_recommendations.py tests/test_api_contract_regression.py tests/test_api_partial_rerun.py` -> passed (9).
+  - `apps/ui`: `npm run build` -> passed.
+- Commits: `<final-sha>`

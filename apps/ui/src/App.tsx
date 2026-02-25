@@ -33,6 +33,8 @@ import type {
   WorkflowRunPartialRerunRequest,
   WorkflowRunPartialRerunResponse,
   WorkflowStep,
+  WorkflowTemplateRecommendationRead,
+  WorkflowTemplateRecommendationResponse,
   WorkflowTemplateRead
 } from "./types/controlPanel";
 import { UI_TABS } from "./types/controlPanel";
@@ -462,6 +464,12 @@ export function App() {
   );
   const [workflows, setWorkflows] = useState<WorkflowTemplateRead[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<number | null>(null);
+  const [workflowRecommendationPrompt, setWorkflowRecommendationPrompt] = useState("");
+  const [workflowRecommendationUseHistory, setWorkflowRecommendationUseHistory] = useState(true);
+  const [workflowRecommendations, setWorkflowRecommendations] = useState<WorkflowTemplateRecommendationRead[]>([]);
+  const [workflowRecommendationDetectedIntents, setWorkflowRecommendationDetectedIntents] = useState<string[]>([]);
+  const [workflowRecommendationRequested, setWorkflowRecommendationRequested] = useState(false);
+  const [workflowRecommendationLoading, setWorkflowRecommendationLoading] = useState(false);
   const [workflowQuickLaunchTemplateIdInput, setWorkflowQuickLaunchTemplateIdInput] = useState("");
   const [workflowQuickLaunchInitiatedBy, setWorkflowQuickLaunchInitiatedBy] = useState("ui-workflow-quick-launch");
   const [runWorkflowTemplateIdInput, setRunWorkflowTemplateIdInput] = useState("");
@@ -734,6 +742,8 @@ export function App() {
     workflowEditorMode === "quick" ? !workflowQuickValidation.hasErrors : !workflowJsonValidationState.hasErrors;
   const defaultWorkflowRoleId = roles.length > 0 ? roles[0].id : null;
   const canQuickLaunchWorkflow = resolvedQuickLaunchTemplateId !== null;
+  const trimmedWorkflowRecommendationPrompt = workflowRecommendationPrompt.trim();
+  const canRecommendWorkflows = trimmedWorkflowRecommendationPrompt.length > 0 && !workflowRecommendationLoading;
 
   const canCreateTask = selectedRole !== null;
   const canDispatch = task !== null;
@@ -912,6 +922,43 @@ export function App() {
     setWorkflowEditorMode("quick");
     setError(null);
     applyWorkflowStepDrafts(workflowPresetToDrafts(selectedWorkflowPreset, defaultWorkflowRoleId));
+  }
+
+  async function onRecommendWorkflowTemplates(event: FormEvent) {
+    event.preventDefault();
+    if (trimmedWorkflowRecommendationPrompt.length === 0) {
+      setError("Recommendation prompt is required.");
+      return;
+    }
+
+    setWorkflowRecommendationLoading(true);
+    setError(null);
+    try {
+      const response = await apiPost<WorkflowTemplateRecommendationResponse>("/workflow-templates/recommend", {
+        query: trimmedWorkflowRecommendationPrompt,
+        project_id: contextProjectId,
+        use_history: workflowRecommendationUseHistory,
+        limit: 5
+      });
+      setWorkflowRecommendationDetectedIntents(response.detected_intents);
+      setWorkflowRecommendations(response.recommendations);
+      setWorkflowRecommendationRequested(true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setWorkflowRecommendationLoading(false);
+    }
+  }
+
+  function onUseRecommendedWorkflowTemplate(templateId: number) {
+    const workflow = workflows.find((item) => item.id === templateId) ?? null;
+    if (workflow !== null) {
+      selectWorkflow(workflow);
+      return;
+    }
+    setWorkflowQuickLaunchTemplateIdInput(String(templateId));
+    setRunWorkflowTemplateIdInput(String(templateId));
+    setError(null);
   }
 
   function onWorkflowEditorModeChange(nextMode: WorkflowEditorMode) {
@@ -2115,6 +2162,83 @@ export function App() {
                   </div>
                 )}
               </div>
+            </form>
+
+            <form
+              className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4"
+              onSubmit={onRecommendWorkflowTemplates}
+            >
+              <div className="md:col-span-2 xl:col-span-4 rounded-lg border border-slate-200 bg-emerald-50 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">Template recommendations</p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      Describe your intent to get ranked workflow templates with explanations.
+                    </p>
+                  </div>
+                  <button type="submit" className={primaryButtonClass} disabled={!canRecommendWorkflows}>
+                    {workflowRecommendationLoading ? "Recommending..." : "Recommend templates"}
+                  </button>
+                </div>
+              </div>
+              <label className="md:col-span-2 xl:col-span-3">
+                <span className={labelClass}>Recommendation prompt</span>
+                <textarea
+                  className={textareaClass}
+                  rows={3}
+                  value={workflowRecommendationPrompt}
+                  onChange={(event) => setWorkflowRecommendationPrompt(event.target.value)}
+                  placeholder="Example: Need a bugfix workflow for urgent production regression."
+                />
+              </label>
+              <label className="md:col-span-2 xl:col-span-1">
+                <span className={labelClass}>History heuristics</span>
+                <span className="mt-2 inline-flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={workflowRecommendationUseHistory}
+                    onChange={(event) => setWorkflowRecommendationUseHistory(event.target.checked)}
+                  />
+                  Use historical success
+                </span>
+              </label>
+              {(workflowRecommendationRequested || workflowRecommendations.length > 0) && (
+                <div className="md:col-span-2 xl:col-span-4 rounded-lg border border-slate-200 bg-white p-3">
+                  <p className={labelClass}>
+                    Detected intents:{" "}
+                    {workflowRecommendationDetectedIntents.length > 0
+                      ? workflowRecommendationDetectedIntents.join(", ")
+                      : "none"}
+                  </p>
+                  {workflowRecommendations.length === 0 ? (
+                    <p className="mt-2 text-sm text-slate-600">No matching templates found.</p>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      {workflowRecommendations.map((item) => (
+                        <div
+                          key={item.workflow_template_id}
+                          className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-sm font-semibold text-slate-800">
+                              {item.name} (id: {item.workflow_template_id})
+                            </p>
+                            <button
+                              type="button"
+                              className={buttonClass}
+                              onClick={() => onUseRecommendedWorkflowTemplate(item.workflow_template_id)}
+                            >
+                              Use template
+                            </button>
+                          </div>
+                          <p className="mt-1 text-xs text-slate-600">Score: {item.score.toFixed(2)}</p>
+                          <p className="mt-1 text-xs text-slate-700">{item.reason}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </form>
 
             <form className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4" onSubmit={onQuickLaunchWorkflowRun}>

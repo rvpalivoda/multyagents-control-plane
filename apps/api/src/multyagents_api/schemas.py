@@ -834,6 +834,36 @@ class WorkflowTemplateRead(BaseModel):
     steps: list[WorkflowStep]
 
 
+class WorkflowTemplateRecommendationRequest(BaseModel):
+    query: str = ""
+    project_id: int | None = None
+    use_history: bool = True
+    limit: int = Field(default=5, ge=1, le=20)
+
+    @model_validator(mode="after")
+    def normalize_query(self) -> "WorkflowTemplateRecommendationRequest":
+        self.query = self.query.strip()
+        return self
+
+
+class WorkflowTemplateRecommendationRead(BaseModel):
+    workflow_template_id: int
+    name: str
+    project_id: int | None = None
+    score: float
+    reason: str
+    intent_matches: list[str] = Field(default_factory=list)
+    historical_runs: int = 0
+    historical_success_rate: float | None = None
+
+
+class WorkflowTemplateRecommendationResponse(BaseModel):
+    query: str
+    detected_intents: list[str] = Field(default_factory=list)
+    use_history: bool
+    recommendations: list[WorkflowTemplateRecommendationRead] = Field(default_factory=list)
+
+
 class AssistantIntentPlanRequest(BaseModel):
     workflow_template_id: int
     initiated_by: str | None = "assistant"

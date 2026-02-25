@@ -50,6 +50,8 @@ from multyagents_api.schemas import (
     WorkflowRunRead,
     WorkflowRunSpawnResult,
     WorkflowTemplateCreate,
+    WorkflowTemplateRecommendationRequest,
+    WorkflowTemplateRecommendationResponse,
     WorkflowTemplateRead,
     WorkflowTemplateUpdate,
 )
@@ -241,6 +243,16 @@ def create_workflow_template(payload: WorkflowTemplateCreate) -> WorkflowTemplat
 @app.get("/workflow-templates", response_model=list[WorkflowTemplateRead])
 def list_workflow_templates() -> list[WorkflowTemplateRead]:
     return store.list_workflow_templates()
+
+
+@app.post("/workflow-templates/recommend", response_model=WorkflowTemplateRecommendationResponse)
+def recommend_workflow_templates(
+    payload: WorkflowTemplateRecommendationRequest,
+) -> WorkflowTemplateRecommendationResponse:
+    try:
+        return store.recommend_workflow_templates(payload)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/workflow-templates/{workflow_template_id}", response_model=WorkflowTemplateRead)

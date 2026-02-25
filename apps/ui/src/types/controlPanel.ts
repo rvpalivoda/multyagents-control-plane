@@ -103,6 +103,24 @@ export type WorkflowTemplateRead = {
   steps: WorkflowStep[];
 };
 
+export type WorkflowTemplateRecommendationRead = {
+  workflow_template_id: number;
+  name: string;
+  project_id: number | null;
+  score: number;
+  reason: string;
+  intent_matches: string[];
+  historical_runs: number;
+  historical_success_rate: number | null;
+};
+
+export type WorkflowTemplateRecommendationResponse = {
+  query: string;
+  detected_intents: string[];
+  use_history: boolean;
+  recommendations: WorkflowTemplateRecommendationRead[];
+};
+
 export type ProjectRead = {
   id: number;
   name: string;

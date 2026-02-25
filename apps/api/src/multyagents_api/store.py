@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -70,6 +71,9 @@ from multyagents_api.schemas import (
     WorkflowRunStatus,
     WorkflowStep,
     WorkflowTemplateCreate,
+    WorkflowTemplateRecommendationRead,
+    WorkflowTemplateRecommendationRequest,
+    WorkflowTemplateRecommendationResponse,
     WorkflowTemplateRead,
 )
 
@@ -175,6 +179,16 @@ class _IsolatedSessionRecord:
 
 
 class InMemoryStore:
+    _INTENT_KEYWORDS: dict[str, tuple[str, ...]] = {
+        "feature": ("feature", "enhancement", "delivery"),
+        "bugfix": ("bugfix", "bug fix", "regression", "defect", "fix"),
+        "release": ("release", "rollout", "go-live", "go live"),
+        "incident": ("incident", "outage", "hotfix", "sev"),
+        "article": ("article", "blog", "editorial", "long-form", "long form"),
+        "social": ("social", "post", "campaign", "hook"),
+        "localization": ("localization", "localisation", "localized", "localised", "translation", "locale"),
+    }
+
     def __init__(self, state_file: str | None = None) -> None:
         self._state_file = Path(state_file).expanduser() if state_file else None
         self._skills_catalog = self._load_skills_catalog()
@@ -365,6 +379,83 @@ class InMemoryStore:
             name=record.name,
             project_id=record.project_id,
             steps=record.steps,
+        )
+
+    def recommend_workflow_templates(
+        self,
+        payload: WorkflowTemplateRecommendationRequest,
+    ) -> WorkflowTemplateRecommendationResponse:
+        if payload.project_id is not None and payload.project_id not in self._projects:
+            raise NotFoundError(f"project {payload.project_id} not found")
+
+        detected_intents = self._match_intents(payload.query)
+        query_tokens = self._tokenize_search_text(payload.query)
+        recommendations: list[WorkflowTemplateRecommendationRead] = []
+
+        for template in self._workflow_templates.values():
+            if payload.project_id is not None and template.project_id != payload.project_id:
+                continue
+
+            template_blob = self._workflow_template_search_blob(template)
+            template_intents = self._match_intents(template_blob)
+            intent_matches = [intent for intent in detected_intents if intent in template_intents]
+
+            score = 0.0
+            reason_parts: list[str] = []
+            if intent_matches:
+                score += float(len(intent_matches) * 10)
+                reason_parts.append(f"Intent match: {', '.join(intent_matches)}.")
+            elif detected_intents:
+                reason_parts.append("No direct intent match; ranked by keyword overlap.")
+
+            overlap_tokens = sorted(token for token in query_tokens if token in template_blob)
+            if overlap_tokens:
+                score += min(len(overlap_tokens), 6) * 0.75
+                reason_parts.append(f"Keyword overlap: {', '.join(overlap_tokens[:4])}.")
+
+            historical_runs = 0
+            historical_success_rate: float | None = None
+            if payload.use_history:
+                historical_runs, historical_success_rate = self._workflow_template_history_metrics(template.id)
+                if historical_success_rate is not None:
+                    score += (historical_success_rate / 100.0) * 4.0
+                    score += min(historical_runs, 10) * 0.15
+                    reason_parts.append(
+                        f"Historical success {historical_success_rate:.1f}% across {historical_runs} run(s)."
+                    )
+                else:
+                    reason_parts.append("No historical runs yet.")
+
+            if not reason_parts:
+                reason_parts.append("General fit based on template metadata.")
+
+            recommendations.append(
+                WorkflowTemplateRecommendationRead(
+                    workflow_template_id=template.id,
+                    name=template.name,
+                    project_id=template.project_id,
+                    score=round(score, 3),
+                    reason=" ".join(reason_parts),
+                    intent_matches=intent_matches,
+                    historical_runs=historical_runs,
+                    historical_success_rate=historical_success_rate,
+                )
+            )
+
+        recommendations.sort(
+            key=lambda item: (
+                -item.score,
+                -(item.historical_success_rate if item.historical_success_rate is not None else -1.0),
+                -item.historical_runs,
+                item.workflow_template_id,
+            )
+        )
+
+        return WorkflowTemplateRecommendationResponse(
+            query=payload.query,
+            detected_intents=detected_intents,
+            use_history=payload.use_history,
+            recommendations=recommendations[: payload.limit],
         )
 
     def update_workflow_template(self, workflow_template_id: int, workflow: WorkflowTemplateCreate) -> WorkflowTemplateRead:
@@ -2947,6 +3038,43 @@ class InMemoryStore:
                 run_id=run_id,
                 payload={"status": next_status},
             )
+
+    @staticmethod
+    def _tokenize_search_text(value: str) -> list[str]:
+        tokens = [token for token in re.split(r"[^a-z0-9]+", value.lower()) if len(token) >= 3]
+        deduplicated: list[str] = []
+        for token in tokens:
+            if token not in deduplicated:
+                deduplicated.append(token)
+        return deduplicated
+
+    @classmethod
+    def _match_intents(cls, value: str) -> list[str]:
+        normalized = value.lower()
+        matched: list[str] = []
+        for intent, keywords in cls._INTENT_KEYWORDS.items():
+            for keyword in keywords:
+                pattern = r"\b" + re.escape(keyword).replace(r"\ ", r"\s+") + r"\b"
+                if re.search(pattern, normalized):
+                    matched.append(intent)
+                    break
+        return matched
+
+    @staticmethod
+    def _workflow_template_search_blob(template: _WorkflowTemplateRecord) -> str:
+        parts = [template.name]
+        for step in template.steps:
+            parts.append(step.step_id)
+            parts.append(step.title)
+        return " ".join(parts).lower()
+
+    def _workflow_template_history_metrics(self, template_id: int) -> tuple[int, float | None]:
+        run_records = [run for run in self._workflow_runs.values() if run.workflow_template_id == template_id]
+        if not run_records:
+            return 0, None
+        success_count = sum(1 for run in run_records if run.status == WorkflowRunStatus.SUCCESS.value)
+        success_rate = round((success_count / len(run_records)) * 100, 2)
+        return len(run_records), success_rate
 
     @staticmethod
     def _is_terminal_task_status(status: str) -> bool:

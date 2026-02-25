@@ -54,6 +54,8 @@ function createWorkflowRunStub(id: number, overrides: Record<string, unknown> = 
 
 function installFetchMock(overrides: Record<string, unknown> = {}) {
   const getPayloads = { ...DEFAULT_GET_PAYLOADS, ...overrides };
+  const recommendationPayload =
+    (overrides["/workflow-templates/recommend"] as Record<string, unknown> | undefined) ?? null;
   let workflowTemplates = Array.isArray(getPayloads["/workflow-templates"])
     ? [...(getPayloads["/workflow-templates"] as unknown[])]
     : [];
@@ -107,6 +109,31 @@ function installFetchMock(overrides: Record<string, unknown> = {}) {
         });
         workflowRuns = [created, ...workflowRuns];
         return jsonResponse(created);
+      }
+      if (path === "/workflow-templates/recommend") {
+        if (recommendationPayload !== null) {
+          return jsonResponse(recommendationPayload);
+        }
+        const payload = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
+        const recommendations = workflowTemplates.slice(0, 3).map((item) => {
+          const workflow = item as { id: number; name: string; project_id: number | null };
+          return {
+            workflow_template_id: workflow.id,
+            name: workflow.name,
+            project_id: workflow.project_id,
+            score: 0,
+            reason: "General fit based on template metadata.",
+            intent_matches: [],
+            historical_runs: 0,
+            historical_success_rate: null
+          };
+        });
+        return jsonResponse({
+          query: typeof payload.query === "string" ? payload.query : "",
+          detected_intents: [],
+          use_history: payload.use_history !== false,
+          recommendations
+        });
       }
     }
 
@@ -406,6 +433,82 @@ describe("workflow builder critical flows", () => {
         initiated_by: "ui-workflow-quick-launch"
       });
     });
+  });
+
+  it("recommends templates from prompt and applies suggested template", async () => {
+    const fetchMock = installFetchMock({
+      "/workflow-templates": [
+        {
+          id: 7,
+          name: "feature-delivery",
+          project_id: null,
+          steps: [
+            { step_id: "plan", role_id: 1, title: "Plan", depends_on: [] },
+            { step_id: "build", role_id: 1, title: "Build", depends_on: ["plan"] }
+          ]
+        },
+        {
+          id: 8,
+          name: "incident-hotfix-lane",
+          project_id: null,
+          steps: [
+            { step_id: "stabilize", role_id: 1, title: "Stabilize", depends_on: [] },
+            { step_id: "patch", role_id: 1, title: "Patch", depends_on: ["stabilize"] }
+          ]
+        }
+      ],
+      "/workflow-templates/recommend": {
+        query: "Need incident hotfix workflow for production outage",
+        detected_intents: ["incident"],
+        use_history: true,
+        recommendations: [
+          {
+            workflow_template_id: 8,
+            name: "incident-hotfix-lane",
+            project_id: null,
+            score: 14.2,
+            reason: "Intent match: incident. Historical success 100.0% across 2 run(s).",
+            intent_matches: ["incident"],
+            historical_runs: 2,
+            historical_success_rate: 100
+          }
+        ]
+      }
+    });
+
+    render(<App />);
+    const user = await openWorkflowsTab();
+
+    await user.type(
+      screen.getByLabelText("Recommendation prompt"),
+      "Need incident hotfix workflow for production outage"
+    );
+    await user.click(screen.getByRole("button", { name: "Recommend templates" }));
+
+    await waitFor(() => {
+      const recommendCall = fetchMock.mock.calls.find(([request, requestInit]) => {
+        const requestUrl =
+          typeof request === "string" || request instanceof URL ? request.toString() : request.url;
+        const url = new URL(requestUrl, "http://localhost");
+        const method = (requestInit?.method ?? "GET").toUpperCase();
+        return method === "POST" && url.pathname === "/workflow-templates/recommend";
+      });
+      expect(recommendCall).toBeDefined();
+      const payload = JSON.parse(String((recommendCall?.[1] as RequestInit).body));
+      expect(payload).toMatchObject({
+        query: "Need incident hotfix workflow for production outage",
+        use_history: true,
+        limit: 5
+      });
+    });
+
+    expect(screen.getByText("Detected intents: incident")).toBeVisible();
+    expect(screen.getByText("Intent match: incident. Historical success 100.0% across 2 run(s).")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Use template" }));
+
+    expect((screen.getByLabelText("Template ID") as HTMLInputElement).value).toBe("8");
+    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("incident-hotfix-lane");
   });
 
   it("validates quick launch template ID before dispatch", async () => {
