@@ -137,6 +137,10 @@ export type TaskAudit = {
   last_retry_reason?: string | null;
   failure_categories?: string[];
   failure_triage_hints?: string[];
+  rerun_count?: number;
+  last_rerun_by?: string | null;
+  last_rerun_reason?: string | null;
+  last_rerun_at?: string | null;
 };
 
 export type WorkflowRunRoleMetric = {

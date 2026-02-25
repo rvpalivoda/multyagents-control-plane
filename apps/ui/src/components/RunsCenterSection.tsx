@@ -1,6 +1,11 @@
+import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import type { EventRead, TaskRead, WorkflowRunRead } from "../../../../packages/contracts/ts/context7";
-import type { WorkflowRunDispatchReadyResponse } from "../types/controlPanel";
+import type {
+  WorkflowRunDispatchReadyResponse,
+  WorkflowRunPartialRerunRequest,
+  WorkflowRunPartialRerunResponse
+} from "../types/controlPanel";
 
 type RunsCenterSectionProps = {
   sectionClass: string;
@@ -24,6 +29,7 @@ type RunsCenterSectionProps = {
   selectedRun: WorkflowRunRead | null;
   selectedRunTasks: TaskRead[];
   runDispatchResult: WorkflowRunDispatchReadyResponse | null;
+  runPartialRerunResult: WorkflowRunPartialRerunResponse | null;
   timelineEvents: EventRead[];
   onRunWorkflowTemplateIdChange: (value: string) => void;
   onRunTaskIdsChange: (value: string) => void;
@@ -34,6 +40,7 @@ type RunsCenterSectionProps = {
   onRefreshTimeline: () => void;
   onRunAction: (action: "pause" | "resume" | "abort") => void;
   onDispatchReadyTask: () => void;
+  onPartialRerun: (payload: WorkflowRunPartialRerunRequest) => void;
   onSelectRun: (runId: number) => void;
 };
 
@@ -60,6 +67,20 @@ function toNumberArray(value: unknown): number[] {
     return [];
   }
   return value.filter((item): item is number => typeof item === "number");
+}
+
+function parseStringList(input: string): string[] {
+  const deduplicated: string[] = [];
+  input
+    .split(/\n|,/)
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .forEach((value) => {
+      if (!deduplicated.includes(value)) {
+        deduplicated.push(value);
+      }
+    });
+  return deduplicated;
 }
 
 function isFailedTaskStatus(status: TaskRead["status"]): boolean {
@@ -152,6 +173,7 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
     selectedRun,
     selectedRunTasks,
     runDispatchResult,
+    runPartialRerunResult,
     timelineEvents,
     onRunWorkflowTemplateIdChange,
     onRunTaskIdsChange,
@@ -162,14 +184,75 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
     onRefreshTimeline,
     onRunAction,
     onDispatchReadyTask,
+    onPartialRerun,
     onSelectRun
   } = props;
   const handoffBoard = buildHandoffBoard(timelineEvents);
   const failedRunTasks = selectedRunTasks.filter((runTask) => isFailedTaskStatus(runTask.status));
+  const failedRunTaskIds = useMemo(() => failedRunTasks.map((task) => task.id), [failedRunTasks]);
+  const [partialRerunTaskIds, setPartialRerunTaskIds] = useState<number[]>([]);
+  const [partialRerunStepIdsInput, setPartialRerunStepIdsInput] = useState("");
+  const [partialRerunRequestedBy, setPartialRerunRequestedBy] = useState("ui-operator");
+  const [partialRerunReason, setPartialRerunReason] = useState("");
+  const parsedPartialRerunStepIds = useMemo(
+    () => parseStringList(partialRerunStepIdsInput),
+    [partialRerunStepIdsInput]
+  );
+  const canPartialRerun =
+    selectedRunId !== null &&
+    partialRerunRequestedBy.trim().length > 0 &&
+    partialRerunReason.trim().length > 0 &&
+    (partialRerunTaskIds.length > 0 || parsedPartialRerunStepIds.length > 0);
+
+  useEffect(() => {
+    setPartialRerunTaskIds(failedRunTaskIds);
+    setPartialRerunStepIdsInput("");
+    setPartialRerunReason("");
+  }, [selectedRunId]);
+
+  useEffect(() => {
+    const failedSet = new Set(failedRunTaskIds);
+    setPartialRerunTaskIds((current) => current.filter((taskId) => failedSet.has(taskId)));
+  }, [failedRunTaskIds]);
+
   const selectedRunFailureCategories = selectedRun?.failure_categories ?? [];
   const selectedRunFailureHints = selectedRun?.failure_triage_hints ?? [];
   const selectedRunSuggestedActions = selectedRun?.suggested_next_actions ?? [];
   const selectedRunQualitySummary = selectedRun?.quality_gate_summary;
+
+  function onTogglePartialRerunTask(taskId: number, checked: boolean) {
+    setPartialRerunTaskIds((current) => {
+      if (checked) {
+        if (current.includes(taskId)) {
+          return current;
+        }
+        return [...current, taskId];
+      }
+      return current.filter((value) => value !== taskId);
+    });
+  }
+
+  function onSubmitPartialRerun() {
+    if (!canPartialRerun || selectedRunId === null) {
+      return;
+    }
+    const taskPreview = partialRerunTaskIds.length > 0 ? partialRerunTaskIds.map((taskId) => `#${taskId}`).join(", ") : "none";
+    const stepPreview = parsedPartialRerunStepIds.length > 0 ? parsedPartialRerunStepIds.join(", ") : "none";
+    const confirmed = window.confirm(
+      `Partial rerun for run #${selectedRunId}?\nTasks: ${taskPreview}\nSteps: ${stepPreview}\nReason: ${partialRerunReason.trim()}`
+    );
+    if (!confirmed) {
+      return;
+    }
+    onPartialRerun({
+      task_ids: partialRerunTaskIds,
+      step_ids: parsedPartialRerunStepIds,
+      requested_by: partialRerunRequestedBy.trim(),
+      reason: partialRerunReason.trim(),
+      auto_dispatch: true,
+      max_dispatch: 10
+    });
+  }
 
   return (
     <section className={sectionClass}>
@@ -362,6 +445,87 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
               </div>
             )}
           </div>
+
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+            <p className={labelClass}>Partial re-run</p>
+            {!selectedRun ? (
+              <p className="mt-2 text-sm text-slate-500">Select a run to rerun specific failed branches or tasks.</p>
+            ) : (
+              <div className="mt-2 space-y-3 text-sm text-slate-700">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className={buttonClass}
+                    onClick={() => setPartialRerunTaskIds(failedRunTaskIds)}
+                    disabled={failedRunTaskIds.length === 0}
+                  >
+                    Select failed tasks
+                  </button>
+                  <button type="button" className={buttonClass} onClick={() => setPartialRerunTaskIds([])}>
+                    Clear task selection
+                  </button>
+                </div>
+                {failedRunTasks.length === 0 ? (
+                  <p className="text-sm text-slate-500">No failed tasks available for rerun.</p>
+                ) : (
+                  <div className="max-h-32 overflow-auto rounded-md border border-slate-200 bg-white p-2">
+                    <ul className="space-y-1">
+                      {failedRunTasks.map((failedTask) => (
+                        <li key={failedTask.id}>
+                          <label className="inline-flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={partialRerunTaskIds.includes(failedTask.id)}
+                              onChange={(event) => onTogglePartialRerunTask(failedTask.id, event.target.checked)}
+                            />
+                            <span>
+                              #{failedTask.id} - {failedTask.status} - {failedTask.title}
+                            </span>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <label className="block">
+                  <span className={labelClass}>Step IDs (optional, comma/newline)</span>
+                  <input
+                    className={inputClass}
+                    value={partialRerunStepIdsInput}
+                    onChange={(event) => setPartialRerunStepIdsInput(event.target.value)}
+                    placeholder="plan,build"
+                  />
+                </label>
+                <label className="block">
+                  <span className={labelClass}>Requested by</span>
+                  <input
+                    className={inputClass}
+                    value={partialRerunRequestedBy}
+                    onChange={(event) => setPartialRerunRequestedBy(event.target.value)}
+                    placeholder="operator"
+                  />
+                </label>
+                <label className="block">
+                  <span className={labelClass}>Reason</span>
+                  <input
+                    className={inputClass}
+                    value={partialRerunReason}
+                    onChange={(event) => setPartialRerunReason(event.target.value)}
+                    placeholder="why rerun is needed"
+                  />
+                </label>
+                <button type="button" className={primaryButtonClass} onClick={onSubmitPartialRerun} disabled={!canPartialRerun}>
+                  Rerun selected failed branches
+                </button>
+              </div>
+            )}
+          </div>
+
+          {runPartialRerunResult && (
+            <pre className="max-h-44 overflow-auto rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-slate-700">
+              {JSON.stringify(runPartialRerunResult, null, 2)}
+            </pre>
+          )}
 
           {runDispatchResult && (
             <pre className="max-h-44 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">

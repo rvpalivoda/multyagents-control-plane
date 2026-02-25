@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import type { TaskRead, WorkflowRunRead } from "../../../../packages/contracts/ts/context7";
@@ -99,6 +100,7 @@ describe("RunsCenterSection quality gate rendering", () => {
         selectedRun={run}
         selectedRunTasks={[task]}
         runDispatchResult={null}
+        runPartialRerunResult={null}
         timelineEvents={[]}
         onRunWorkflowTemplateIdChange={vi.fn()}
         onRunTaskIdsChange={vi.fn()}
@@ -109,6 +111,7 @@ describe("RunsCenterSection quality gate rendering", () => {
         onRefreshTimeline={vi.fn()}
         onRunAction={vi.fn()}
         onDispatchReadyTask={vi.fn()}
+        onPartialRerun={vi.fn()}
         onSelectRun={vi.fn()}
       />
     );
@@ -116,5 +119,72 @@ describe("RunsCenterSection quality gate rendering", () => {
     expect(screen.getAllByText(/Quality gates: pending/).length).toBeGreaterThan(0);
     expect(screen.getByText("1/2 task(s) currently pass; 1 task(s) still pending quality checks.")).toBeVisible();
     expect(screen.getByText("0/1 checks passed, 1 pending.")).toBeVisible();
+  });
+
+  it("submits partial rerun payload for selected failed task", async () => {
+    const run = buildRun();
+    const failedTask: TaskRead = {
+      ...buildTask(),
+      id: 301,
+      title: "Retry me",
+      status: "failed",
+      runner_message: "failed"
+    };
+    const onPartialRerun = vi.fn();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const user = userEvent.setup();
+
+    render(
+      <RunsCenterSection
+        sectionClass="section"
+        labelClass="label"
+        inputClass="input"
+        buttonClass="button"
+        primaryButtonClass="primary"
+        tableClass="table"
+        thClass="th"
+        tdClass="td"
+        runWorkflowTemplateIdInput=""
+        runTaskIdsInput=""
+        runInitiatedBy=""
+        runSearchInput=""
+        selectedRunId={run.id}
+        filteredRuns={[run]}
+        roleNameById={{}}
+        workflowNameById={{}}
+        workflowProjectIdById={{}}
+        projectNameById={{}}
+        selectedRun={run}
+        selectedRunTasks={[failedTask]}
+        runDispatchResult={null}
+        runPartialRerunResult={null}
+        timelineEvents={[]}
+        onRunWorkflowTemplateIdChange={vi.fn()}
+        onRunTaskIdsChange={vi.fn()}
+        onRunInitiatedByChange={vi.fn()}
+        onRunSearchChange={vi.fn()}
+        onCreateWorkflowRun={vi.fn()}
+        onRefreshRuns={vi.fn()}
+        onRefreshTimeline={vi.fn()}
+        onRunAction={vi.fn()}
+        onDispatchReadyTask={vi.fn()}
+        onPartialRerun={onPartialRerun}
+        onSelectRun={vi.fn()}
+      />
+    );
+
+    await user.type(screen.getByLabelText("Reason"), "retry after fix");
+    await user.click(screen.getByRole("button", { name: "Rerun selected failed branches" }));
+
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(onPartialRerun).toHaveBeenCalledWith({
+      task_ids: [failedTask.id],
+      step_ids: [],
+      requested_by: "ui-operator",
+      reason: "retry after fix",
+      auto_dispatch: true,
+      max_dispatch: 10
+    });
+    confirmSpy.mockRestore();
   });
 });

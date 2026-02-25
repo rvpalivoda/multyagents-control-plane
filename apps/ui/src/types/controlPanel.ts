@@ -1,4 +1,4 @@
-import type { ApprovalStatus } from "../../../../packages/contracts/ts/context7";
+import type { ApprovalStatus, TaskStatus } from "../../../../packages/contracts/ts/context7";
 
 export type DispatchResult = {
   resolved_context7_enabled: boolean;
@@ -10,6 +10,48 @@ export type WorkflowRunDispatchReadyResponse = {
   task_id: number | null;
   reason: string | null;
   dispatch: DispatchResult | null;
+};
+
+export type WorkflowRunDispatchPlanItem = {
+  task_id: number;
+  consumed_artifact_ids: number[];
+};
+
+export type WorkflowRunDispatchBlockedItem = {
+  task_id: number | null;
+  reason: string;
+  details: Record<string, unknown>;
+};
+
+export type WorkflowRunDispatchPlan = {
+  ready: WorkflowRunDispatchPlanItem[];
+  blocked: WorkflowRunDispatchBlockedItem[];
+};
+
+export type WorkflowRunPartialRerunRequest = {
+  task_ids: number[];
+  step_ids: string[];
+  requested_by: string;
+  reason: string;
+  auto_dispatch: boolean;
+  max_dispatch: number;
+};
+
+export type WorkflowRunPartialRerunResponse = {
+  run_id: number;
+  requested_by: string;
+  reason: string;
+  selected_task_ids: number[];
+  selected_step_ids: string[];
+  reset_task_ids: number[];
+  plan: WorkflowRunDispatchPlan;
+  spawn: Array<{
+    task_id: number;
+    submitted: boolean;
+    task_status: TaskStatus;
+    error?: string | null;
+  }>;
+  aggregate: Record<string, unknown>;
 };
 
 export type WorkflowStep = {

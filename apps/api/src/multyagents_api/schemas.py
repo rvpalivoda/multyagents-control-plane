@@ -456,6 +456,10 @@ class TaskAudit(BaseModel):
     last_retry_reason: str | None = None
     failure_categories: list[str] = Field(default_factory=list)
     failure_triage_hints: list[str] = Field(default_factory=list)
+    rerun_count: int = 0
+    last_rerun_by: str | None = None
+    last_rerun_reason: str | None = None
+    last_rerun_at: str | None = None
     recent_event_ids: list[int] = Field(default_factory=list)
 
 
@@ -615,6 +619,58 @@ class WorkflowRunExecutionSummary(BaseModel):
 class WorkflowRunControlLoopResponse(BaseModel):
     run_id: int
     plan: WorkflowRunDispatchPlan
+    spawn: list[WorkflowRunSpawnResult] = Field(default_factory=list)
+    aggregate: WorkflowRunExecutionSummary
+
+
+class WorkflowRunPartialRerunRequest(BaseModel):
+    task_ids: list[int] = Field(default_factory=list)
+    step_ids: list[str] = Field(default_factory=list)
+    requested_by: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    auto_dispatch: bool = True
+    max_dispatch: int = Field(default=10, ge=1, le=100)
+
+    @model_validator(mode="after")
+    def normalize_fields(self) -> "WorkflowRunPartialRerunRequest":
+        deduplicated_task_ids: list[int] = []
+        for task_id in self.task_ids:
+            if task_id <= 0:
+                raise ValueError("task_ids must contain positive integers")
+            if task_id in deduplicated_task_ids:
+                continue
+            deduplicated_task_ids.append(task_id)
+        self.task_ids = deduplicated_task_ids
+
+        deduplicated_step_ids: list[str] = []
+        for step_id in self.step_ids:
+            trimmed = step_id.strip()
+            if not trimmed:
+                continue
+            if trimmed in deduplicated_step_ids:
+                continue
+            deduplicated_step_ids.append(trimmed)
+        self.step_ids = deduplicated_step_ids
+
+        self.requested_by = self.requested_by.strip()
+        self.reason = self.reason.strip()
+        if not self.requested_by:
+            raise ValueError("requested_by must not be empty")
+        if not self.reason:
+            raise ValueError("reason must not be empty")
+        if not self.task_ids and not self.step_ids:
+            raise ValueError("task_ids or step_ids is required")
+        return self
+
+
+class WorkflowRunPartialRerunResponse(BaseModel):
+    run_id: int
+    requested_by: str
+    reason: str
+    selected_task_ids: list[int] = Field(default_factory=list)
+    selected_step_ids: list[str] = Field(default_factory=list)
+    reset_task_ids: list[int] = Field(default_factory=list)
+    plan: WorkflowRunDispatchPlan = Field(default_factory=WorkflowRunDispatchPlan)
     spawn: list[WorkflowRunSpawnResult] = Field(default_factory=list)
     aggregate: WorkflowRunExecutionSummary
 

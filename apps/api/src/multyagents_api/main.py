@@ -42,8 +42,11 @@ from multyagents_api.schemas import (
     WorkflowRunControlLoopRequest,
     WorkflowRunControlLoopResponse,
     WorkflowRunCreate,
+    WorkflowRunDispatchBlockedItem,
     WorkflowRunDispatchReadyResponse,
     WorkflowRunExecutionSummary,
+    WorkflowRunPartialRerunRequest,
+    WorkflowRunPartialRerunResponse,
     WorkflowRunRead,
     WorkflowRunSpawnResult,
     WorkflowTemplateCreate,
@@ -421,6 +424,85 @@ def execute_workflow_run_control_loop(
         aggregate = store.get_workflow_run_execution_summary(run_id)
         return WorkflowRunControlLoopResponse(
             run_id=run_id,
+            plan=plan,
+            spawn=spawn_results,
+            aggregate=aggregate,
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/workflow-runs/{run_id}/partial-rerun", response_model=WorkflowRunPartialRerunResponse)
+def partial_rerun_workflow_run(
+    run_id: int,
+    payload: WorkflowRunPartialRerunRequest,
+) -> WorkflowRunPartialRerunResponse:
+    try:
+        selected_task_ids, selected_step_ids, reset_task_ids, plan = store.partial_rerun_workflow_run(
+            run_id,
+            task_ids=payload.task_ids,
+            step_ids=payload.step_ids,
+            requested_by=payload.requested_by,
+            reason=payload.reason,
+        )
+
+        spawn_results: list[WorkflowRunSpawnResult] = []
+        if payload.auto_dispatch:
+            ready_to_dispatch = list(plan.ready[: payload.max_dispatch])
+            for skipped_item in plan.ready[payload.max_dispatch:]:
+                plan.blocked.append(
+                    WorkflowRunDispatchBlockedItem(
+                        task_id=skipped_item.task_id,
+                        reason="dispatch-limit-reached",
+                        details={"max_dispatch": payload.max_dispatch},
+                    )
+                )
+            plan.ready = ready_to_dispatch
+
+            for plan_item in ready_to_dispatch:
+                try:
+                    dispatch_result = store.dispatch_task(
+                        plan_item.task_id,
+                        consumed_artifact_ids=plan_item.consumed_artifact_ids,
+                    )
+                    runner_submission = submit_to_runner(dispatch_result.runner_payload)
+                    task_after_submission = store.apply_runner_submission(plan_item.task_id, runner_submission)
+                    dispatch_response = DispatchResponse(
+                        task_id=plan_item.task_id,
+                        resolved_context7_enabled=dispatch_result.resolved_context7_enabled,
+                        runner_payload=dispatch_result.runner_payload,
+                        runner_submission=runner_submission,
+                    )
+                    spawn_results.append(
+                        WorkflowRunSpawnResult(
+                            task_id=plan_item.task_id,
+                            submitted=runner_submission.submitted,
+                            task_status=task_after_submission.status,
+                            dispatch=dispatch_response,
+                        )
+                    )
+                except (ConflictError, ValidationError) as exc:
+                    current_task = store.get_task(plan_item.task_id)
+                    spawn_results.append(
+                        WorkflowRunSpawnResult(
+                            task_id=plan_item.task_id,
+                            submitted=False,
+                            task_status=current_task.status,
+                            error=str(exc),
+                        )
+                    )
+        aggregate = store.get_workflow_run_execution_summary(run_id)
+        return WorkflowRunPartialRerunResponse(
+            run_id=run_id,
+            requested_by=payload.requested_by,
+            reason=payload.reason,
+            selected_task_ids=selected_task_ids,
+            selected_step_ids=selected_step_ids,
+            reset_task_ids=reset_task_ids,
             plan=plan,
             spawn=spawn_results,
             aggregate=aggregate,

@@ -37,6 +37,7 @@ The platform coordinates many autonomous agents for coding and non-coding tasks.
   - retry/timeout policy
   - approval gates
   - quality gate policy (`required_checks[]`, `severity`, `blocker/warn`) with task/run summaries
+- Runs Center supports selective partial re-run of failed branches/tasks by `task_ids` or `step_ids` with operator reason capture.
 
 4. Agent execution modes
 - `no-workspace`

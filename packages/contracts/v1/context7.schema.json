@@ -320,7 +320,11 @@
         "failure_triage_hints": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
-        }
+        },
+        "rerun_count": { "type": "integer", "minimum": 0 },
+        "last_rerun_by": { "type": ["string", "null"] },
+        "last_rerun_reason": { "type": ["string", "null"] },
+        "last_rerun_at": { "type": ["string", "null"] }
       },
       "additionalProperties": false
     },

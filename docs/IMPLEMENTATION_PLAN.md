@@ -48,6 +48,7 @@
 - Observability dashboards (status and queue depth).
 - Audit timeline for run/task decisions.
 - Unified quality-gate summaries for code/content workflows.
+- Partial rerun engine for failed branches/tasks with operator audit reason.
 - Integration tests for key workflows.
 - Documentation and operator runbook.
 

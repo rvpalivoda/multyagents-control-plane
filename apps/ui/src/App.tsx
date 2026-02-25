@@ -29,6 +29,8 @@ import type {
   SkillPackRead,
   UiTab,
   WorkflowRunDispatchReadyResponse,
+  WorkflowRunPartialRerunRequest,
+  WorkflowRunPartialRerunResponse,
   WorkflowStep,
   WorkflowTemplateRead
 } from "./types/controlPanel";
@@ -418,6 +420,7 @@ export function App() {
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [timelineEvents, setTimelineEvents] = useState<EventRead[]>([]);
   const [runDispatchResult, setRunDispatchResult] = useState<WorkflowRunDispatchReadyResponse | null>(null);
+  const [runPartialRerunResult, setRunPartialRerunResult] = useState<WorkflowRunPartialRerunResponse | null>(null);
 
   const [audit, setAudit] = useState<TaskAudit | null>(null);
   const [dispatchResult, setDispatchResult] = useState<DispatchResult | null>(null);
@@ -1314,6 +1317,8 @@ export function App() {
       });
       await loadWorkflowRuns();
       setSelectedRunId(created.id);
+      setRunDispatchResult(null);
+      setRunPartialRerunResult(null);
       await loadTimelineEvents(created.id, null);
     } catch (err) {
       setError((err as Error).message);
@@ -1342,6 +1347,8 @@ export function App() {
       setActiveTab("runs");
       await loadWorkflowRuns();
       setSelectedRunId(created.id);
+      setRunDispatchResult(null);
+      setRunPartialRerunResult(null);
       await loadTasks(created.id);
       await loadTimelineEvents(created.id, null);
     } catch (err) {
@@ -1356,6 +1363,8 @@ export function App() {
     setError(null);
     try {
       await apiPost<WorkflowRunRead>(`/workflow-runs/${selectedRunId}/${action}`, {});
+      setRunDispatchResult(null);
+      setRunPartialRerunResult(null);
       await loadWorkflowRuns();
       await loadTimelineEvents(selectedRunId, null);
     } catch (err) {
@@ -1374,6 +1383,7 @@ export function App() {
         {}
       );
       setRunDispatchResult(result);
+      setRunPartialRerunResult(null);
       await loadWorkflowRuns();
       await loadTasks(selectedRunId);
       if (result.task_id !== null) {
@@ -1389,6 +1399,45 @@ export function App() {
         }
       }
       await loadTimelineEvents(selectedRunId, result.task_id);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function onPartialRerun(payload: WorkflowRunPartialRerunRequest) {
+    if (selectedRunId === null) {
+      return;
+    }
+    setError(null);
+    try {
+      const result = await apiPost<WorkflowRunPartialRerunResponse>(
+        `/workflow-runs/${selectedRunId}/partial-rerun`,
+        payload
+      );
+      setRunPartialRerunResult(result);
+      setRunDispatchResult(null);
+      await loadWorkflowRuns();
+      await loadTasks(selectedRunId);
+      const lastSpawnedTaskId = result.spawn.length > 0 ? result.spawn[result.spawn.length - 1].task_id : null;
+      if (lastSpawnedTaskId !== null) {
+        const currentTask = await apiGet<TaskRead>(`/tasks/${lastSpawnedTaskId}`);
+        setTask(currentTask);
+        if (currentTask.requires_approval) {
+          await loadTaskApproval(currentTask.id);
+        } else {
+          setTaskApproval(null);
+        }
+        try {
+          const currentAudit = await apiGet<TaskAudit>(`/tasks/${lastSpawnedTaskId}/audit`);
+          setAudit(currentAudit);
+        } catch (auditError) {
+          if (!isApiErrorWithStatus(auditError, 404)) {
+            throw auditError;
+          }
+          setAudit(null);
+        }
+      }
+      await loadTimelineEvents(selectedRunId, null);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -2085,6 +2134,7 @@ export function App() {
             selectedRun={selectedRun}
             selectedRunTasks={selectedRunTasks}
             runDispatchResult={runDispatchResult}
+            runPartialRerunResult={runPartialRerunResult}
             timelineEvents={timelineEvents}
             onRunWorkflowTemplateIdChange={setRunWorkflowTemplateIdInput}
             onRunTaskIdsChange={setRunTaskIdsInput}
@@ -2095,9 +2145,12 @@ export function App() {
             onRefreshTimeline={() => void onRefreshTimeline()}
             onRunAction={(action) => void onRunAction(action)}
             onDispatchReadyTask={onDispatchReadyTask}
+            onPartialRerun={(payload) => void onPartialRerun(payload)}
             onSelectRun={(runId) => {
               setSelectedRunId(runId);
               setTaskFilterRunIdInput(String(runId));
+              setRunDispatchResult(null);
+              setRunPartialRerunResult(null);
               void loadTasks(runId);
               void loadTimelineEvents(runId, null);
             }}

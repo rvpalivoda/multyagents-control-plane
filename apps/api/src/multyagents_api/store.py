@@ -783,6 +783,175 @@ class InMemoryStore:
             )
         return plan
 
+    def partial_rerun_workflow_run(
+        self,
+        run_id: int,
+        *,
+        task_ids: list[int],
+        step_ids: list[str],
+        requested_by: str,
+        reason: str,
+    ) -> tuple[list[int], list[str], list[int], WorkflowRunDispatchPlan]:
+        run = self._workflow_runs.get(run_id)
+        if run is None:
+            raise NotFoundError(f"workflow run {run_id} not found")
+        if run.status == WorkflowRunStatus.ABORTED.value:
+            raise ConflictError(f"workflow run {run_id} is aborted")
+        if run.status == WorkflowRunStatus.PAUSED.value:
+            raise ConflictError(f"workflow run {run_id} is paused")
+
+        active_statuses = {
+            TaskStatus.DISPATCHED.value,
+            TaskStatus.QUEUED.value,
+            TaskStatus.RUNNING.value,
+            TaskStatus.CANCEL_REQUESTED.value,
+        }
+        active_task_ids = [
+            task_id
+            for task_id in run.task_ids
+            if task_id in self._tasks and self._tasks[task_id].status in active_statuses
+        ]
+        if active_task_ids:
+            raise ConflictError(
+                f"workflow run {run_id} has active tasks and cannot be partially rerun: {active_task_ids}"
+            )
+
+        selected_step_ids: list[str] = []
+        selected_task_ids: list[int] = []
+        selected_task_id_set: set[int] = set()
+
+        if step_ids:
+            if run.workflow_template_id is None:
+                raise ValidationError("step_ids selection requires workflow run with workflow_template_id")
+            template = self._workflow_templates.get(run.workflow_template_id)
+            if template is None:
+                raise NotFoundError(f"workflow template {run.workflow_template_id} not found")
+            if len(template.steps) != len(run.task_ids):
+                raise ValidationError("cannot resolve step_ids for this workflow run")
+            step_to_task_id = {
+                template.steps[index].step_id: run.task_ids[index]
+                for index in range(len(template.steps))
+            }
+            unknown_step_ids = [step_id for step_id in step_ids if step_id not in step_to_task_id]
+            if unknown_step_ids:
+                raise ValidationError(f"unknown step_ids for run {run_id}: {', '.join(sorted(set(unknown_step_ids)))}")
+            for step_id in step_ids:
+                task_id = step_to_task_id[step_id]
+                if step_id not in selected_step_ids:
+                    selected_step_ids.append(step_id)
+                if task_id not in selected_task_id_set:
+                    selected_task_id_set.add(task_id)
+                    selected_task_ids.append(task_id)
+
+        for task_id in task_ids:
+            if task_id not in selected_task_id_set:
+                selected_task_id_set.add(task_id)
+                selected_task_ids.append(task_id)
+
+        if not selected_task_ids:
+            raise ValidationError("task_ids or step_ids must resolve at least one task for partial rerun")
+
+        run_task_ids = set(run.task_ids)
+        unknown_task_ids = [task_id for task_id in selected_task_ids if task_id not in run_task_ids]
+        if unknown_task_ids:
+            raise ValidationError(f"unknown task_ids for run {run_id}: {sorted(set(unknown_task_ids))}")
+
+        rerunnable_statuses = {
+            TaskStatus.FAILED.value,
+            TaskStatus.CANCELED.value,
+            TaskStatus.SUBMIT_FAILED.value,
+        }
+        non_rerunnable: list[str] = []
+        for task_id in selected_task_ids:
+            task = self._tasks.get(task_id)
+            if task is None:
+                continue
+            if task.status not in rerunnable_statuses:
+                non_rerunnable.append(f"{task_id}:{task.status}")
+        if non_rerunnable:
+            raise ValidationError(
+                "partial rerun supports failed terminal tasks only; invalid selections: "
+                + ", ".join(non_rerunnable)
+            )
+
+        for task_id in selected_task_ids:
+            for dependency_task_id in run.step_dependencies.get(task_id, []):
+                dependency = self._tasks.get(dependency_task_id)
+                if dependency is None:
+                    continue
+                if dependency.status in rerunnable_statuses and dependency_task_id not in selected_task_id_set:
+                    raise ValidationError(
+                        "selected task depends on failed task that is not selected for rerun: "
+                        f"task {task_id} -> dependency {dependency_task_id}"
+                    )
+
+        ordered_selected_task_ids = [task_id for task_id in run.task_ids if task_id in selected_task_id_set]
+        reset_task_ids: list[int] = []
+        rerun_timestamp = self._utc_now()
+        for task_id in ordered_selected_task_ids:
+            task = self._tasks.get(task_id)
+            if task is None:
+                continue
+            previous_status = task.status
+            task.status = TaskStatus.CREATED.value
+            task.runner_message = f"partial rerun requested by {requested_by}: {reason}"
+            task.started_at = None
+            task.finished_at = None
+            task.exit_code = None
+            task.stdout = None
+            task.stderr = None
+            self._tasks[task_id] = task
+            self._handoffs.pop(task_id, None)
+            self._apply_partial_rerun_audit(
+                task_id=task_id,
+                run_id=run_id,
+                requested_by=requested_by,
+                reason=reason,
+                rerun_at=rerun_timestamp,
+            )
+            self._append_event(
+                event_type="task.partial_rerun_reset",
+                run_id=run_id,
+                task_id=task_id,
+                payload={
+                    "previous_status": previous_status,
+                    "requested_by": requested_by,
+                    "reason": reason,
+                    "rerun_at": rerun_timestamp,
+                },
+            )
+            reset_task_ids.append(task_id)
+
+        updated_run = _WorkflowRunRecord(
+            id=run.id,
+            workflow_template_id=run.workflow_template_id,
+            task_ids=run.task_ids,
+            status=WorkflowRunStatus.RUNNING.value,
+            initiated_by=run.initiated_by,
+            created_at=run.created_at,
+            updated_at=rerun_timestamp,
+            step_dependencies=run.step_dependencies,
+            step_artifact_requirements=run.step_artifact_requirements,
+        )
+        self._workflow_runs[run_id] = updated_run
+        self._append_event(
+            event_type="workflow_run.partial_rerun_requested",
+            run_id=run_id,
+            payload={
+                "requested_by": requested_by,
+                "reason": reason,
+                "selected_task_ids": ordered_selected_task_ids,
+                "selected_step_ids": selected_step_ids,
+                "reset_task_ids": reset_task_ids,
+            },
+        )
+        plan = self._plan_selected_dispatch(
+            run_id=run_id,
+            selected_task_ids=ordered_selected_task_ids,
+        )
+        self._persist_state()
+        return ordered_selected_task_ids, selected_step_ids, reset_task_ids, plan
+
     def get_workflow_run_execution_summary(self, run_id: int) -> WorkflowRunExecutionSummary:
         run = self._workflow_runs.get(run_id)
         if run is None:
@@ -1236,6 +1405,10 @@ class InMemoryStore:
             last_retry_reason=previous_audit.last_retry_reason if previous_audit is not None else None,
             failure_categories=list(previous_audit.failure_categories) if previous_audit is not None else [],
             failure_triage_hints=list(previous_audit.failure_triage_hints) if previous_audit is not None else [],
+            rerun_count=previous_audit.rerun_count if previous_audit is not None else 0,
+            last_rerun_by=previous_audit.last_rerun_by if previous_audit is not None else None,
+            last_rerun_reason=previous_audit.last_rerun_reason if previous_audit is not None else None,
+            last_rerun_at=previous_audit.last_rerun_at if previous_audit is not None else None,
             recent_event_ids=list(previous_audit.recent_event_ids) if previous_audit is not None else [],
         )
         record = self._tasks.get(task.id)
@@ -1736,6 +1909,113 @@ class InMemoryStore:
 
             ready.append((task_id, consumed_artifact_ids))
         return ready, blocked_by_approval
+
+    def _plan_selected_dispatch(
+        self,
+        *,
+        run_id: int,
+        selected_task_ids: list[int],
+    ) -> WorkflowRunDispatchPlan:
+        run = self._workflow_runs.get(run_id)
+        if run is None:
+            raise NotFoundError(f"workflow run {run_id} not found")
+        selected_set = set(selected_task_ids)
+        plan = WorkflowRunDispatchPlan()
+
+        for task_id in run.task_ids:
+            if task_id not in selected_set:
+                continue
+            task = self._tasks.get(task_id)
+            if task is None:
+                continue
+            if task.status not in (TaskStatus.CREATED.value, TaskStatus.SUBMIT_FAILED.value):
+                plan.blocked.append(
+                    WorkflowRunDispatchBlockedItem(
+                        task_id=task_id,
+                        reason="not-dispatchable-state",
+                        details={"status": task.status},
+                    )
+                )
+                continue
+
+            dependencies = run.step_dependencies.get(task_id, [])
+            unresolved_dependencies: list[dict[str, Any]] = []
+            for dependency_task_id in dependencies:
+                dependency_task = self._tasks.get(dependency_task_id)
+                dependency_status = (
+                    dependency_task.status
+                    if dependency_task is not None
+                    else "missing"
+                )
+                if dependency_status != TaskStatus.SUCCESS.value:
+                    unresolved_dependencies.append(
+                        {"task_id": dependency_task_id, "status": dependency_status}
+                    )
+            if unresolved_dependencies:
+                plan.blocked.append(
+                    WorkflowRunDispatchBlockedItem(
+                        task_id=task_id,
+                        reason="dependencies-not-satisfied",
+                        details={"dependencies": unresolved_dependencies},
+                    )
+                )
+                continue
+
+            consumed_artifact_ids, missing_requirements = self._resolve_handoff_artifacts(
+                run_id=run_id,
+                task_id=task_id,
+            )
+            if consumed_artifact_ids is None:
+                plan.blocked.append(
+                    WorkflowRunDispatchBlockedItem(
+                        task_id=task_id,
+                        reason="required-handoff-artifacts-missing",
+                        details={"missing_requirements": missing_requirements},
+                    )
+                )
+                continue
+
+            approval_status = self._approval_status_for_task(task_id)
+            if task.requires_approval and approval_status != ApprovalStatus.APPROVED:
+                approval_id = self._task_approval.get(task_id)
+                plan.blocked.append(
+                    WorkflowRunDispatchBlockedItem(
+                        task_id=task_id,
+                        reason="approval-required",
+                        details={
+                            "approval_id": approval_id,
+                            "approval_status": approval_status.value if approval_status is not None else "missing",
+                        },
+                    )
+                )
+                continue
+
+            plan.ready.append(
+                WorkflowRunDispatchPlanItem(
+                    task_id=task_id,
+                    consumed_artifact_ids=consumed_artifact_ids,
+                )
+            )
+        return plan
+
+    def _apply_partial_rerun_audit(
+        self,
+        *,
+        task_id: int,
+        run_id: int,
+        requested_by: str,
+        reason: str,
+        rerun_at: str,
+    ) -> None:
+        audit = self._audits.get(task_id)
+        if audit is None:
+            return
+        audit.rerun_count += 1
+        audit.last_rerun_by = requested_by
+        audit.last_rerun_reason = reason
+        audit.last_rerun_at = rerun_at
+        audit.handoff = None
+        self._audits[task_id] = audit
 
     def _approval_status_for_task(self, task_id: int) -> ApprovalStatus | None:
         task = self._tasks.get(task_id)

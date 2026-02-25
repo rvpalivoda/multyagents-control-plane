@@ -45,7 +45,8 @@ Suggested transport:
 7. Approval gates block until operator decision.
 8. Quality gates are evaluated per task and aggregated per run (`blocker`/`warn` checks).
 9. Failed task/run states are auto-triaged into failure categories with suggested operator next actions.
-10. Run completes with final summary.
+10. Operator may trigger partial re-run for selected failed `task_ids`/`step_ids`; only selected failed branches are reset and re-dispatched.
+11. Run completes with final summary.
 
 ## 5. Execution modes
 
