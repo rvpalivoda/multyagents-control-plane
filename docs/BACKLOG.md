@@ -101,7 +101,7 @@
 - `TASK-061` (`P0`, `done`): End-to-end local readiness scenarios
 - `TASK-062` (`P1`, `done`): Runbooks for local failure recovery
 - `TASK-063` (`P1`, `todo`): Contract regression suite (summary/gates/timeline)
-- `TASK-064` (`P1`, `todo`): Local readiness checklist (Go/No-Go)
+- `TASK-064` (`P1`, `done`): Local readiness checklist (Go/No-Go)
 
 ## Operating rule
 

@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `todo`
+- Status: `done`
 - Priority: `P1`
 - Owner: `codex`
 - Created: `2026-02-25`
@@ -30,4 +30,4 @@
 
 ## Result
 
-- Commits: `<sha1>`
+- Commits: `<final-sha>`
