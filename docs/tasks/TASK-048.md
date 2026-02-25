@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `todo`
+- Status: `in_progress`
 - Priority: `P0`
 - Owner: `codex`
 - Created: `2026-02-25`
