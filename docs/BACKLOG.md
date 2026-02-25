@@ -103,6 +103,12 @@
 - `TASK-063` (`P1`, `done`): Contract regression suite (summary/gates/timeline)
 - `TASK-064` (`P1`, `done`): Local readiness checklist (Go/No-Go)
 
+
+### EPIC-12 Test hardening and reliability gates
+- `TASK-065` (`P0`, `done`): Real-case E2E API scenarios
+- `TASK-066` (`P1`, `todo`): E2E reliability gate script
+- `TASK-067` (`P1`, `todo`): Failure injection regression pack
+
 ## Operating rule
 
 Before starting implementation, create/update task file from template:
