@@ -844,6 +844,12 @@ class InMemoryStore:
                 )
             )
 
+        total_tasks = len(task_summaries)
+        done_count = len(successful_task_ids)
+        blocked_count = len(failed_task_ids) + len(pending_task_ids)
+        active_count = len(active_task_ids)
+        progress_percent = round(((done_count + len(failed_task_ids)) / total_tasks) * 100, 2) if total_tasks else 0.0
+
         return WorkflowRunExecutionSummary(
             run=self._to_workflow_run_read(run),
             task_status_counts=status_counts,
@@ -853,6 +859,8 @@ class InMemoryStore:
                 WorkflowRunStatus.ABORTED.value,
             ),
             partial_completion=bool(successful_task_ids) and len(successful_task_ids) < len(task_summaries),
+            progress_percent=progress_percent,
+            branch_status_cards={"active": active_count, "blocked": blocked_count, "done": done_count},
             next_dispatch=self.plan_workflow_run_dispatch(run_id, max_tasks=max(len(run.task_ids), 1)),
             successful_task_ids=successful_task_ids,
             failed_task_ids=failed_task_ids,

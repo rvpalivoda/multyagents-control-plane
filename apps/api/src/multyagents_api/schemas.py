@@ -602,6 +602,8 @@ class WorkflowRunExecutionSummary(BaseModel):
     task_status_counts: dict[str, int] = Field(default_factory=dict)
     terminal: bool = False
     partial_completion: bool = False
+    progress_percent: float = 0.0
+    branch_status_cards: dict[str, int] = Field(default_factory=dict)
     next_dispatch: WorkflowRunDispatchPlan = Field(default_factory=WorkflowRunDispatchPlan)
     successful_task_ids: list[int] = Field(default_factory=list)
     failed_task_ids: list[int] = Field(default_factory=list)
