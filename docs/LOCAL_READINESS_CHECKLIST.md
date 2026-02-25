@@ -56,3 +56,11 @@ You can start daily local usage now for real runs, with two caveats:
 - Tasks: `docs/tasks/TASK-057.md`, `TASK-058.md`, `TASK-060.md`, `TASK-061.md`, `TASK-062.md`, `TASK-063.md`, `TASK-064.md`
 - Compose docs: `infra/compose/README.md`
 - Ops runbook: `docs/LOCAL_GATEWAY_SANDBOX_FIX.md`
+
+
+## Quick validation commands
+
+- `./scripts/multyagents readiness`
+- `./scripts/ui-test-smoke.sh`
+- `cd apps/ui && npm run build`
+- `cd apps/api && .venv/bin/pytest -q`
