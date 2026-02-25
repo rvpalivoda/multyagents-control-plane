@@ -240,6 +240,57 @@ cmd_logs() {
   (cd "$COMPOSE_DIR" && docker compose logs --tail=120)
 }
 
+cmd_init_project() {
+  require_command python3
+  require_command curl
+
+  local name="${1:-}"
+  local root_path="${2:-}"
+  if [[ -z "$name" || -z "$root_path" ]]; then
+    echo "usage: ./scripts/multyagents init-project <name> <absolute_path>" >&2
+    return 2
+  fi
+
+  case "$root_path" in
+    /*) ;;
+    *)
+      echo "root_path must be absolute: $root_path" >&2
+      return 2
+      ;;
+  esac
+
+  mkdir -p "$root_path/src" "$root_path/docs" "$root_path/content"
+  if [[ ! -f "$root_path/README.md" ]]; then
+    cat > "$root_path/README.md" <<EOF
+# $name
+
+Created via ./scripts/multyagents init-project
+EOF
+  fi
+
+  local api_base="http://127.0.0.1:$(api_port)"
+  local payload
+  payload="$(python3 - <<PY
+import json
+name = ${name@Q}
+root = ${root_path@Q}
+print(json.dumps({
+  "name": name,
+  "root_path": root,
+  "allowed_paths": [f"{root}/src", f"{root}/docs", f"{root}/content"],
+}))
+PY
+)"
+
+  local response
+  response="$(curl -fsS -X POST "$api_base/projects" -H 'content-type: application/json' -d "$payload")"
+  python3 - "$response" <<'PY'
+import json,sys
+obj=json.loads(sys.argv[1])
+print(f"project created: id={obj.get('id')} name={obj.get('name')} root={obj.get('root_path')}")
+PY
+}
+
 cmd_e2e() {
   require_command docker
   require_command python3
@@ -547,6 +598,7 @@ Commands:
   down     Stop docker stack and host-runner
   status   Show process/container status and health checks
   logs     Show recent host-runner and docker logs
+  init-project Create physical project dir + register project in API
   e2e      Run end-to-end smoke scenario
   stress-smoke Run parallel workflow stress smoke scenario
   race-stress Run TASK-072 concurrency/race stress suite (alias: stress-race)
@@ -573,6 +625,7 @@ main() {
     down) cmd_down ;;
     status) cmd_status ;;
     logs) cmd_logs ;;
+    init-project) shift; cmd_init_project "$@" ;;
     e2e) cmd_e2e ;;
     stress-smoke) cmd_stress_smoke ;;
     race-stress|stress-race) cmd_race_stress ;;
