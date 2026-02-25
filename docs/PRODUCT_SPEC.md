@@ -57,6 +57,7 @@ The platform coordinates many autonomous agents for coding and non-coding tasks.
 7. Telegram integration
 - Commands: status, run, pause, resume, approve, abort.
 - Notifications for blockers, failures, and approval requests.
+- Failed runs/tasks expose auto-triage category, operator hints, and suggested next actions in control interfaces.
 
 8. Knowledge provider configuration
 - Role-level default for Context7 usage.

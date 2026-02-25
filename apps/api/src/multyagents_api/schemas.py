@@ -180,6 +180,9 @@ class TaskRead(BaseModel):
     started_at: str | None = None
     finished_at: str | None = None
     exit_code: int | None = None
+    failure_category: str | None = None
+    failure_triage_hints: list[str] = Field(default_factory=list)
+    suggested_next_actions: list[str] = Field(default_factory=list)
 
 
 class RunnerContext(BaseModel):
@@ -429,6 +432,7 @@ class WorkflowRunRead(BaseModel):
     retry_summary: dict[str, Any] = Field(default_factory=dict)
     failure_categories: list[str] = Field(default_factory=list)
     failure_triage_hints: list[str] = Field(default_factory=list)
+    suggested_next_actions: list[str] = Field(default_factory=list)
     duration_ms: int | None = None
     success_rate: float = 0.0
     retries_total: int = 0

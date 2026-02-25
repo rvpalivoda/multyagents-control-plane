@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Status: `in_progress`
+- Status: `done`
 - Priority: `P1`
 - Owner: `codex`
 - Created: `2026-02-25`
@@ -24,16 +24,36 @@
 ## Scope
 
 - MVP реализация по задаче.
+- API: авто-классификация причин падения для task/run.
+- UI: отображение triage и suggested next actions в Runs Center.
+- Контракты: расширение `TaskRead` и `WorkflowRunRead` triage-полями.
 
 ## Acceptance criteria
 
-- [ ] Реализовано минимально полезно для ежедневной работы.
-- [ ] Покрыто тестами/валидацией.
+- [x] Реализовано минимально полезно для ежедневной работы.
+- [x] Покрыто тестами/валидацией.
 
 ## Test plan
 
-- [ ] Targeted tests + smoke.
+- [x] Добавлены targeted API tests: `apps/api/tests/test_api_failure_triage.py`.
+- [x] Python syntax smoke: `python3 -m compileall apps/api/src/multyagents_api`.
+- [x] Прогон API regression: `.venv/bin/pytest -q tests/test_api_failure_triage.py tests/test_api_retry_strategy.py tests/test_api_run_rollup.py`.
+- [x] UI regression: `npm test` + `npm run build`.
 
 ## Result
 
-- Commits: `<sha1>`
+- Реализован auto-triage в API для `failed`/`submit-failed`/`canceled` task-статусов с вычислением:
+  - `failure_category`
+  - `failure_triage_hints`
+  - `suggested_next_actions`
+- Добавлена агрегация triage на уровне run:
+  - `failure_categories`
+  - `failure_triage_hints`
+  - `suggested_next_actions`
+- UI Runs Center дополнен блоком Failure triage:
+  - run-level категории/подсказки/next actions
+  - task-level triage summary для failed-задач
+- Обновлены контракты (`packages/contracts/ts` + JSON schema).
+- Обновлены spec/architecture формулировки для triage behavior.
+
+- Commits: `<final-sha>`

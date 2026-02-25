@@ -67,7 +67,10 @@
         "runner_message",
         "started_at",
         "finished_at",
-        "exit_code"
+        "exit_code",
+        "failure_category",
+        "failure_triage_hints",
+        "suggested_next_actions"
       ],
       "properties": {
         "id": { "type": "integer", "minimum": 1 },
@@ -85,7 +88,16 @@
         "runner_message": { "type": ["string", "null"] },
         "started_at": { "type": ["string", "null"] },
         "finished_at": { "type": ["string", "null"] },
-        "exit_code": { "type": ["integer", "null"] }
+        "exit_code": { "type": ["integer", "null"] },
+        "failure_category": { "type": ["string", "null"] },
+        "failure_triage_hints": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "suggested_next_actions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
       },
       "additionalProperties": false
     },
@@ -272,6 +284,9 @@
         "initiated_by",
         "created_at",
         "updated_at",
+        "failure_categories",
+        "failure_triage_hints",
+        "suggested_next_actions",
         "duration_ms",
         "success_rate",
         "retries_total",
@@ -294,6 +309,10 @@
           "items": { "type": "string", "minLength": 1 }
         },
         "failure_triage_hints": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "suggested_next_actions": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
         },

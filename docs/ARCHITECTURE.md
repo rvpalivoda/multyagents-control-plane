@@ -43,7 +43,8 @@ Suggested transport:
 5. Task emits artifact(s), status changes to success/failure.
 6. Dependent tasks are unlocked only when required artifact handoff conditions are satisfied.
 7. Approval gates block until operator decision.
-8. Run completes with final summary.
+8. Failed task/run states are auto-triaged into failure categories with suggested operator next actions.
+9. Run completes with final summary.
 
 ## 5. Execution modes
 

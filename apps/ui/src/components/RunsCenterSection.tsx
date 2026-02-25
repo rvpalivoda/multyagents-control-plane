@@ -62,6 +62,10 @@ function toNumberArray(value: unknown): number[] {
   return value.filter((item): item is number => typeof item === "number");
 }
 
+function isFailedTaskStatus(status: TaskRead["status"]): boolean {
+  return status === "failed" || status === "submit-failed" || status === "canceled";
+}
+
 function buildHandoffBoard(events: EventRead[]): HandoffBoardItem[] {
   const items = events
     .filter((event) => event.event_type === "task.handoff_published")
@@ -144,6 +148,10 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
     onSelectRun
   } = props;
   const handoffBoard = buildHandoffBoard(timelineEvents);
+  const failedRunTasks = selectedRunTasks.filter((runTask) => isFailedTaskStatus(runTask.status));
+  const selectedRunFailureCategories = selectedRun?.failure_categories ?? [];
+  const selectedRunFailureHints = selectedRun?.failure_triage_hints ?? [];
+  const selectedRunSuggestedActions = selectedRun?.suggested_next_actions ?? [];
 
   return (
     <section className={sectionClass}>
@@ -285,11 +293,44 @@ export function RunsCenterSection(props: RunsCenterSectionProps) {
                   {selectedRunTasks.map((runTask) => (
                     <li key={runTask.id}>
                       #{runTask.id} - {runTask.status} - {runTask.title}
+                      {isFailedTaskStatus(runTask.status) && (
+                        <div className="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+                          <p>Category: {runTask.failure_category ?? "unknown"}</p>
+                          {runTask.failure_triage_hints.length > 0 && (
+                            <p>Hint: {runTask.failure_triage_hints[0]}</p>
+                          )}
+                          {runTask.suggested_next_actions.length > 0 && (
+                            <p>Suggested next action: {runTask.suggested_next_actions[0]}</p>
+                          )}
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
               )}
             </div>
+          </div>
+
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className={labelClass}>Failure triage</p>
+            {!selectedRun ? (
+              <p className="mt-2 text-sm text-slate-500">Select a run to see triage hints and suggested actions.</p>
+            ) : selectedRunFailureCategories.length === 0 && failedRunTasks.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-500">No failed tasks detected in this run.</p>
+            ) : (
+              <div className="mt-2 space-y-2 text-sm text-amber-900">
+                <p>
+                  Categories: {selectedRunFailureCategories.length > 0 ? selectedRunFailureCategories.join(", ") : "-"}
+                </p>
+                <p>Failed tasks: {failedRunTasks.map((task) => `#${task.id}`).join(", ") || "-"}</p>
+                {selectedRunFailureHints.length > 0 && (
+                  <p>Hints: {selectedRunFailureHints.join(" | ")}</p>
+                )}
+                {selectedRunSuggestedActions.length > 0 && (
+                  <p>Suggested next actions: {selectedRunSuggestedActions.join(" | ")}</p>
+                )}
+              </div>
+            )}
           </div>
 
           {runDispatchResult && (

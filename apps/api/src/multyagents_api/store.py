@@ -2826,9 +2826,9 @@ class InMemoryStore:
             used_by_role_ids=used_by_role_ids,
         )
 
-    @staticmethod
-    def _to_task_read(record: _TaskRecord) -> TaskRead:
+    def _to_task_read(self, record: _TaskRecord) -> TaskRead:
         sandbox = SandboxConfig(**record.sandbox) if record.sandbox is not None else None
+        failure_category, failure_triage_hints, suggested_next_actions = self._triage_for_task_record(record)
         return TaskRead(
             id=record.id,
             role_id=record.role_id,
@@ -2844,6 +2844,9 @@ class InMemoryStore:
             started_at=record.started_at,
             finished_at=record.finished_at,
             exit_code=record.exit_code,
+            failure_category=failure_category,
+            failure_triage_hints=failure_triage_hints,
+            suggested_next_actions=suggested_next_actions,
         )
 
     @staticmethod
@@ -2974,8 +2977,18 @@ class InMemoryStore:
         return duration_ms, success_rate, retries_total, per_role
 
     def _to_workflow_run_read(self, record: _WorkflowRunRecord) -> WorkflowRunRead:
-        retry_summary, failure_categories, failure_triage_hints = self._build_workflow_retry_surface(record)
+        retry_summary, retry_categories, retry_hints = self._build_workflow_retry_surface(record)
+        triage_categories, triage_hints, suggested_next_actions = self._triage_for_run_record(record)
         duration_ms, success_rate, retries_total, per_role = self._build_workflow_run_metrics(record)
+
+        failure_categories = list(retry_categories)
+        for category in triage_categories:
+            self._append_unique(failure_categories, category)
+
+        failure_triage_hints = list(retry_hints)
+        for hint in triage_hints:
+            self._append_unique(failure_triage_hints, hint)
+
         return WorkflowRunRead(
             id=record.id,
             workflow_template_id=record.workflow_template_id,
@@ -2987,6 +3000,7 @@ class InMemoryStore:
             retry_summary=retry_summary,
             failure_categories=failure_categories,
             failure_triage_hints=failure_triage_hints,
+            suggested_next_actions=suggested_next_actions,
             duration_ms=duration_ms,
             success_rate=success_rate,
             retries_total=retries_total,
@@ -3038,6 +3052,242 @@ class InMemoryStore:
             retry_summary["exhausted_task_ids"] = exhausted_task_ids
 
         return retry_summary, failure_categories, failure_triage_hints
+
+    def _triage_for_run_record(self, record: _WorkflowRunRecord) -> tuple[list[str], list[str], list[str]]:
+        if record.status not in (WorkflowRunStatus.FAILED.value, WorkflowRunStatus.ABORTED.value):
+            return [], [], []
+
+        categories: list[str] = []
+        hints: list[str] = []
+        actions: list[str] = []
+
+        for task_id in record.task_ids:
+            task = self._tasks.get(task_id)
+            if task is None:
+                continue
+            failure_category, task_hints, task_actions = self._triage_for_task_record(task)
+            if failure_category is not None:
+                categories.append(failure_category)
+            hints.extend(task_hints)
+            actions.extend(task_actions)
+
+        if record.status == WorkflowRunStatus.ABORTED.value and not categories:
+            categories.append("run-aborted")
+            hints.append("Run was aborted by operator action before successful completion.")
+            actions.append("Review the latest timeline events and decide whether to resume or start a new run.")
+
+        return (
+            self._dedupe_strings(categories),
+            self._dedupe_strings(hints),
+            self._dedupe_strings(actions),
+        )
+
+    def _triage_for_task_record(self, record: _TaskRecord) -> tuple[str | None, list[str], list[str]]:
+        if record.status not in (
+            TaskStatus.FAILED.value,
+            TaskStatus.CANCELED.value,
+            TaskStatus.SUBMIT_FAILED.value,
+        ):
+            return None, [], []
+
+        message = (record.runner_message or "").strip()
+        signal = self._task_failure_signal_text(record)
+        category = "unknown"
+
+        if record.status == TaskStatus.SUBMIT_FAILED.value:
+            category = "runner-submit"
+        elif record.status == TaskStatus.CANCELED.value:
+            category = "canceled"
+        elif self._contains_any(
+            signal,
+            (
+                "timeout",
+                "timed out",
+                "connection refused",
+                "connection reset",
+                "network",
+                "dns",
+                "econn",
+                "temporary failure",
+                "host runner",
+                "unreachable",
+            ),
+        ):
+            category = "network"
+        elif self._contains_any(
+            signal,
+            (
+                "permission denied",
+                "not permitted",
+                "access denied",
+                "unauthorized",
+                "forbidden",
+                "read-only file system",
+            ),
+        ):
+            category = "permission"
+        elif record.execution_mode == ExecutionMode.ISOLATED_WORKTREE.value and self._contains_any(
+            signal,
+            (
+                "worktree",
+                "git",
+                "branch",
+                "checkout",
+                "merge",
+                "rebase",
+                "fatal:",
+            ),
+        ):
+            category = "workspace-git"
+        elif record.execution_mode == ExecutionMode.DOCKER_SANDBOX.value and self._contains_any(
+            signal,
+            (
+                "docker",
+                "container",
+                "sandbox",
+                "image",
+            ),
+        ):
+            category = "sandbox"
+        elif self._contains_any(
+            signal,
+            (
+                "assertion",
+                "test failed",
+                "failed test",
+                "pytest",
+                "unit test",
+                "integration test",
+            ),
+        ):
+            category = "test-regression"
+        elif self._contains_any(
+            signal,
+            (
+                "command not found",
+                "no module named",
+                "module not found",
+                "cannot find module",
+                "no such file or directory",
+                "package",
+                "dependency",
+            ),
+        ):
+            category = "dependency"
+        elif record.execution_mode == ExecutionMode.DOCKER_SANDBOX.value:
+            category = "sandbox"
+        elif record.execution_mode == ExecutionMode.ISOLATED_WORKTREE.value:
+            category = "workspace-git"
+
+        if category == "runner-submit":
+            return (
+                category,
+                ["Runner submission failed before task execution started."],
+                [
+                    "Check host-runner health and API-to-runner connectivity.",
+                    "Retry task dispatch after runner endpoint is healthy.",
+                ],
+            )
+        if category == "canceled":
+            return (
+                category,
+                ["Task was canceled before completion."],
+                [
+                    "Confirm whether cancellation was expected or accidental.",
+                    "Re-dispatch the task if the run should continue.",
+                ],
+            )
+        if category == "network":
+            return (
+                category,
+                ["Network/timeout failure detected. Verify runner connectivity and callback delivery."],
+                [
+                    "Validate HOST_RUNNER_URL and callback base URL reachability.",
+                    "Retry the failed task once connectivity is restored.",
+                ],
+            )
+        if category == "permission":
+            return (
+                category,
+                ["Permission or policy denial detected during execution."],
+                [
+                    "Review project path policy and role tool constraints for this task.",
+                    "Adjust permissions/policy and re-run the task.",
+                ],
+            )
+        if category == "workspace-git":
+            return (
+                category,
+                ["Isolated worktree or git operation failed during task execution."],
+                [
+                    "Inspect task audit worktree cleanup fields and recent worktree events.",
+                    "Resolve git/worktree conflicts, then retry the task.",
+                ],
+            )
+        if category == "sandbox":
+            return (
+                category,
+                ["Docker sandbox runtime failure detected."],
+                [
+                    "Verify sandbox image, command, mounts, and container runtime health.",
+                    "Re-run the task after fixing sandbox configuration or environment.",
+                ],
+            )
+        if category == "test-regression":
+            return (
+                category,
+                ["Task failed due to test/regression signals in runner output."],
+                [
+                    "Inspect stderr/stdout for failing assertions and stack traces.",
+                    "Patch the implementation and re-run targeted tests before retry.",
+                ],
+            )
+        if category == "dependency":
+            return (
+                category,
+                ["Missing dependency or command detected in execution environment."],
+                [
+                    "Install or provision the missing dependency/tooling in task environment.",
+                    "Retry after dependency validation passes.",
+                ],
+            )
+
+        generic_hint = "Task failed without a recognized failure signature."
+        if message:
+            generic_hint = f"Task failed: {message}"
+        return (
+            category,
+            [generic_hint],
+            [
+                "Inspect task audit, lifecycle events, and runner logs for root cause.",
+                "Apply a fix or rollback and re-dispatch the task.",
+            ],
+        )
+
+    def _task_failure_signal_text(self, record: _TaskRecord) -> str:
+        audit = self._audits.get(record.id)
+        parts = [
+            record.runner_message or "",
+            record.stderr or "",
+            record.stdout or "",
+            audit.sandbox_error if audit is not None and audit.sandbox_error is not None else "",
+            audit.worktree_cleanup_message
+            if audit is not None and audit.worktree_cleanup_message is not None
+            else "",
+        ]
+        return " ".join(part.strip().lower() for part in parts if part and part.strip())
+
+    @staticmethod
+    def _contains_any(signal: str, keywords: tuple[str, ...]) -> bool:
+        return any(keyword in signal for keyword in keywords)
+
+    @staticmethod
+    def _dedupe_strings(values: list[str]) -> list[str]:
+        deduped: list[str] = []
+        for value in values:
+            if value not in deduped:
+                deduped.append(value)
+        return deduped
 
     @staticmethod
     def _utc_now() -> str:

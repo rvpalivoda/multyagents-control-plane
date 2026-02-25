@@ -89,6 +89,11 @@ Includes run timeline support:
     - `retry_summary`
     - `failure_categories`
     - `failure_triage_hints`
+    - `suggested_next_actions`
+  - task payload includes:
+    - `failure_category`
+    - `failure_triage_hints`
+    - `suggested_next_actions`
 
 Assistant-facing orchestration intents (chat-friendly):
 - `POST /assistant/intents/plan`

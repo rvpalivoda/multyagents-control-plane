@@ -41,6 +41,9 @@ export type TaskRead = {
   started_at: string | null;
   finished_at: string | null;
   exit_code: number | null;
+  failure_category: string | null;
+  failure_triage_hints: string[];
+  suggested_next_actions: string[];
 };
 
 export type TaskHandoffArtifactRef = {
@@ -99,8 +102,9 @@ export type WorkflowRunRead = {
   created_at: string;
   updated_at: string;
   retry_summary?: Record<string, unknown>;
-  failure_categories?: string[];
-  failure_triage_hints?: string[];
+  failure_categories: string[];
+  failure_triage_hints: string[];
+  suggested_next_actions: string[];
   duration_ms: number | null;
   success_rate: number;
   retries_total: number;

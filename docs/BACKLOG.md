@@ -83,7 +83,7 @@
 ### EPIC-9 Autonomous operator effectiveness
 - `TASK-054` (`P0`, `done`): Assistant control loop (plan->spawn->aggregate)
 - `TASK-051` (`P1`, `done`): Run-cost and throughput dashboard
-- `TASK-052` (`P1`, `in_progress`): Auto-triage failed runs
+- `TASK-052` (`P1`, `done`): Auto-triage failed runs
 - `TASK-053` (`P2`, `todo`): Template recommendation engine
 
 ## Operating rule
