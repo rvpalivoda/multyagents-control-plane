@@ -51,6 +51,7 @@ Includes run timeline support:
 - workflow run endpoints:
   - `POST /workflow-runs`
     - when created from `workflow_template_id` without explicit `task_ids`, run tasks are auto-created from template steps
+    - optional `step_task_overrides` map supports per-step task settings (`context7_mode`, `execution_mode`, `requires_approval`, workspace/sandbox fields)
   - `GET /workflow-runs`
   - `GET /workflow-runs/{run_id}`
   - `POST /workflow-runs/{run_id}/pause`
@@ -59,6 +60,14 @@ Includes run timeline support:
     - abort also sends task cancel requests to host-runner for linked tasks
   - `POST /workflow-runs/{run_id}/dispatch-ready`
     - dispatches next DAG-ready task for the run
+  - `POST /workflow-runs/{run_id}/control-loop`
+    - executes one assistant control-loop tick over existing primitives:
+      - `plan` dispatch candidates (dependencies + handoff + approval checks)
+      - `spawn` ready tasks via runner submission
+      - `aggregate` run/task summary in one response
+  - `GET /workflow-runs/{run_id}/execution-summary`
+    - machine-readable run summary for chat/assistant consumers
+    - includes per-task statuses, dispatch plan state, and artifact/handoff rollups
 - event timeline endpoint:
   - `GET /events` with optional `run_id`, `task_id`, `event_type`, `limit`
   - `POST /events` for external structured event ingestion
@@ -72,7 +81,6 @@ Includes run timeline support:
 - auto-retry + recovery hints:
   - retry policy sources:
     - role-level: `execution_constraints.retry_policy`
-    - step-level override: workflow step `retry_policy`
   - retry policy shape:
     - `max_retries` (0..10)
     - `retry_on` (`network`, `flaky-test`, `runner-transient`)
@@ -81,6 +89,16 @@ Includes run timeline support:
     - `retry_summary`
     - `failure_categories`
     - `failure_triage_hints`
+
+Assistant-facing orchestration intents (chat-friendly):
+- `POST /assistant/intents/plan`
+  - returns resolved step plan (dependencies + per-step task config) and machine-readable summary
+- `POST /assistant/intents/start`
+  - creates workflow run from template, optionally dispatches all currently-ready tasks, reports approval-blocked tasks
+- `POST /assistant/intents/status`
+  - returns run/tasks snapshot with machine-readable rollup (`task_status_counts`, `ready_task_ids`, `blocked_by_approval_task_ids`, artifacts/handoffs coverage)
+- `POST /assistant/intents/report`
+  - returns aggregated run report (`events`, `artifacts`, `handoffs`) plus machine-readable summary for chat automation
 
 Task runtime control:
 - `GET /tasks` with optional `run_id` filter

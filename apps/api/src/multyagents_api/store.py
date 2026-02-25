@@ -4,10 +4,20 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from multyagents_api.context_policy import resolve_context7_enabled
 from multyagents_api.schemas import (
+    AssistantIntentPlanRequest,
+    AssistantIntentPlanResponse,
+    AssistantIntentReportRequest,
+    AssistantIntentReportResponse,
+    AssistantIntentStartRequest,
+    AssistantIntentStartResponse,
+    AssistantIntentStatusRequest,
+    AssistantIntentStatusResponse,
+    AssistantMachineSummary,
+    AssistantPlanStepRead,
     ApprovalRead,
     ApprovalStatus,
     ArtifactCreate,
@@ -39,7 +49,13 @@ from multyagents_api.schemas import (
     TaskRead,
     TaskStatus,
     WorkflowRunCreate,
+    WorkflowRunDispatchBlockedItem,
+    WorkflowRunDispatchPlan,
+    WorkflowRunDispatchPlanItem,
+    WorkflowRunExecutionSummary,
+    WorkflowRunExecutionTaskSummary,
     WorkflowRunRead,
+    WorkflowRunStepTaskOverride,
     WorkflowRunStatus,
     WorkflowStep,
     WorkflowTemplateCreate,
@@ -381,14 +397,27 @@ class InMemoryStore:
         step_artifact_requirements: dict[int, list[dict[str, Any]]] = {}
         if run.workflow_template_id is not None and not resolved_task_ids:
             template = self._workflow_templates[run.workflow_template_id]
+            known_step_ids = {step.step_id for step in template.steps}
+            unknown_override_step_ids = sorted(set(run.step_task_overrides) - known_step_ids)
+            if unknown_override_step_ids:
+                unknown_joined = ", ".join(unknown_override_step_ids)
+                raise ValidationError(f"unknown workflow step overrides: {unknown_joined}")
             step_to_task_id: dict[str, int] = {}
             for step in template.steps:
+                override = self._resolve_step_task_override(
+                    template_project_id=template.project_id,
+                    override=run.step_task_overrides.get(step.step_id),
+                )
                 created = self.create_task(
                     TaskCreate(
                         role_id=step.role_id,
                         title=step.title,
-                        context7_mode=Context7Mode.INHERIT,
-                        execution_mode=ExecutionMode.NO_WORKSPACE,
+                        context7_mode=override.context7_mode,
+                        execution_mode=override.execution_mode,
+                        requires_approval=override.requires_approval,
+                        project_id=override.project_id,
+                        lock_paths=override.lock_paths,
+                        sandbox=override.sandbox,
                     )
                 )
                 step_to_task_id[step.step_id] = created.id
@@ -457,6 +486,124 @@ class InMemoryStore:
             raise NotFoundError(f"workflow run {run_id} not found")
         return self._to_workflow_run_read(record)
 
+    def plan_assistant_intent(self, payload: AssistantIntentPlanRequest) -> AssistantIntentPlanResponse:
+        template = self._workflow_templates.get(payload.workflow_template_id)
+        if template is None:
+            raise NotFoundError(f"workflow template {payload.workflow_template_id} not found")
+
+        steps = self._assistant_plan_steps(template, payload.step_task_overrides)
+        planned_step_ids = [step.step_id for step in steps]
+        planned_approval_step_ids = [step.step_id for step in steps if step.task_config.requires_approval]
+        summary = AssistantMachineSummary(
+            phase="plan",
+            workflow_template_id=template.id,
+            total_tasks=len(steps),
+            task_status_counts={"planned": len(steps)} if steps else {},
+            planned_step_ids=planned_step_ids,
+            planned_approval_step_ids=planned_approval_step_ids,
+        )
+        return AssistantIntentPlanResponse(
+            workflow_template_id=template.id,
+            initiated_by=payload.initiated_by,
+            steps=steps,
+            machine_summary=summary,
+        )
+
+    def start_assistant_intent(
+        self,
+        payload: AssistantIntentStartRequest,
+        *,
+        submitter: Callable[[RunnerSubmitPayload], RunnerSubmission],
+    ) -> AssistantIntentStartResponse:
+        plan = self.plan_assistant_intent(
+            AssistantIntentPlanRequest(
+                workflow_template_id=payload.workflow_template_id,
+                initiated_by=payload.initiated_by,
+                step_task_overrides=payload.step_task_overrides,
+            )
+        )
+        run = self.create_workflow_run(
+            WorkflowRunCreate(
+                workflow_template_id=payload.workflow_template_id,
+                initiated_by=payload.initiated_by,
+                step_task_overrides=payload.step_task_overrides,
+            )
+        )
+
+        dispatches: list[DispatchResponse] = []
+        blocked_by_approval_task_ids: list[int] = []
+        if payload.dispatch_ready:
+            dispatch_candidates, blocked_by_approval_task_ids = self._assistant_dispatch_candidates(run.id)
+            for task_id in blocked_by_approval_task_ids:
+                approval_status = self._approval_status_for_task(task_id)
+                approval_id = self._task_approval.get(task_id)
+                self._append_event(
+                    event_type="task.dispatch_blocked_by_approval",
+                    run_id=run.id,
+                    task_id=task_id,
+                    payload={
+                        "approval_id": approval_id,
+                        "status": approval_status.value if approval_status is not None else None,
+                    },
+                )
+
+            for task_id, consumed_artifact_ids in dispatch_candidates:
+                dispatch_result = self.dispatch_task(task_id, consumed_artifact_ids=consumed_artifact_ids)
+                runner_submission = submitter(dispatch_result.runner_payload)
+                self.apply_runner_submission(task_id, runner_submission)
+                dispatches.append(
+                    DispatchResponse(
+                        task_id=dispatch_result.task_id,
+                        resolved_context7_enabled=dispatch_result.resolved_context7_enabled,
+                        runner_payload=dispatch_result.runner_payload,
+                        runner_submission=runner_submission,
+                    )
+                )
+
+            if blocked_by_approval_task_ids and not dispatch_candidates:
+                self._persist_state()
+
+        machine_summary = self._build_assistant_machine_summary(run_id=run.id, phase="start")
+        return AssistantIntentStartResponse(
+            run=self.get_workflow_run(run.id),
+            steps=plan.steps,
+            dispatches=dispatches,
+            blocked_by_approval_task_ids=blocked_by_approval_task_ids,
+            machine_summary=machine_summary,
+        )
+
+    def status_assistant_intent(self, payload: AssistantIntentStatusRequest) -> AssistantIntentStatusResponse:
+        run = self.get_workflow_run(payload.run_id)
+        tasks = self.list_tasks(run_id=payload.run_id) if payload.include_tasks else []
+        machine_summary = self._build_assistant_machine_summary(run_id=payload.run_id, phase="status")
+        return AssistantIntentStatusResponse(
+            run=run,
+            tasks=tasks,
+            machine_summary=machine_summary,
+        )
+
+    def report_assistant_intent(self, payload: AssistantIntentReportRequest) -> AssistantIntentReportResponse:
+        run = self.get_workflow_run(payload.run_id)
+        tasks = self.list_tasks(run_id=payload.run_id)
+        events = self.list_events(run_id=payload.run_id, limit=payload.event_limit)
+        artifacts = self.list_artifacts(run_id=payload.run_id, limit=payload.artifact_limit)
+        handoffs = self.list_handoffs(run_id=payload.run_id, limit=payload.handoff_limit)
+        machine_summary = self._build_assistant_machine_summary(
+            run_id=payload.run_id,
+            phase="report",
+            preloaded_events=events,
+            preloaded_artifacts=artifacts,
+            preloaded_handoffs=handoffs,
+        )
+        return AssistantIntentReportResponse(
+            run=run,
+            tasks=tasks,
+            events=events,
+            artifacts=artifacts,
+            handoffs=handoffs,
+            machine_summary=machine_summary,
+        )
+
     def pause_workflow_run(self, run_id: int) -> WorkflowRunRead:
         return self._set_workflow_run_status(run_id, WorkflowRunStatus.PAUSED, "workflow_run.paused")
 
@@ -518,6 +665,185 @@ class InMemoryStore:
                 )
             return None, "required handoff artifacts missing", []
         return None, "no ready tasks", []
+
+    def plan_workflow_run_dispatch(self, run_id: int, *, max_tasks: int = 100) -> WorkflowRunDispatchPlan:
+        run = self._workflow_runs.get(run_id)
+        if run is None:
+            raise NotFoundError(f"workflow run {run_id} not found")
+
+        if max_tasks <= 0:
+            return WorkflowRunDispatchPlan()
+
+        plan = WorkflowRunDispatchPlan()
+        if run.status == WorkflowRunStatus.ABORTED.value:
+            plan.blocked.append(
+                WorkflowRunDispatchBlockedItem(
+                    task_id=None,
+                    reason="run-aborted",
+                    details={"run_id": run_id},
+                )
+            )
+            return plan
+        if run.status == WorkflowRunStatus.PAUSED.value:
+            plan.blocked.append(
+                WorkflowRunDispatchBlockedItem(
+                    task_id=None,
+                    reason="run-paused",
+                    details={"run_id": run_id},
+                )
+            )
+            return plan
+
+        for task_id in run.task_ids:
+            task = self._tasks.get(task_id)
+            if task is None:
+                continue
+            if task.status not in (TaskStatus.CREATED.value, TaskStatus.SUBMIT_FAILED.value):
+                continue
+
+            dependencies = run.step_dependencies.get(task_id, [])
+            unresolved_dependencies: list[dict[str, Any]] = []
+            for dependency_task_id in dependencies:
+                dependency_task = self._tasks.get(dependency_task_id)
+                dependency_status = (
+                    dependency_task.status
+                    if dependency_task is not None
+                    else "missing"
+                )
+                if dependency_status != TaskStatus.SUCCESS.value:
+                    unresolved_dependencies.append(
+                        {"task_id": dependency_task_id, "status": dependency_status}
+                    )
+            if unresolved_dependencies:
+                plan.blocked.append(
+                    WorkflowRunDispatchBlockedItem(
+                        task_id=task_id,
+                        reason="dependencies-not-satisfied",
+                        details={"dependencies": unresolved_dependencies},
+                    )
+                )
+                continue
+
+            consumed_artifact_ids, missing_requirements = self._resolve_handoff_artifacts(
+                run_id=run_id,
+                task_id=task_id,
+            )
+            if consumed_artifact_ids is None:
+                plan.blocked.append(
+                    WorkflowRunDispatchBlockedItem(
+                        task_id=task_id,
+                        reason="required-handoff-artifacts-missing",
+                        details={"missing_requirements": missing_requirements},
+                    )
+                )
+                continue
+
+            approval_status = self._approval_status_for_task(task_id)
+            if task.requires_approval and approval_status != ApprovalStatus.APPROVED:
+                approval_id = self._task_approval.get(task_id)
+                plan.blocked.append(
+                    WorkflowRunDispatchBlockedItem(
+                        task_id=task_id,
+                        reason="approval-required",
+                        details={
+                            "approval_id": approval_id,
+                            "approval_status": approval_status.value if approval_status is not None else "missing",
+                        },
+                    )
+                )
+                continue
+
+            if len(plan.ready) >= max_tasks:
+                plan.blocked.append(
+                    WorkflowRunDispatchBlockedItem(
+                        task_id=task_id,
+                        reason="dispatch-limit-reached",
+                        details={"max_tasks": max_tasks},
+                    )
+                )
+                continue
+
+            plan.ready.append(
+                WorkflowRunDispatchPlanItem(
+                    task_id=task_id,
+                    consumed_artifact_ids=consumed_artifact_ids,
+                )
+            )
+        return plan
+
+    def get_workflow_run_execution_summary(self, run_id: int) -> WorkflowRunExecutionSummary:
+        run = self._workflow_runs.get(run_id)
+        if run is None:
+            raise NotFoundError(f"workflow run {run_id} not found")
+
+        status_counts: dict[str, int] = {}
+        successful_task_ids: list[int] = []
+        failed_task_ids: list[int] = []
+        active_task_ids: list[int] = []
+        pending_task_ids: list[int] = []
+        task_summaries: list[WorkflowRunExecutionTaskSummary] = []
+
+        for task_id in run.task_ids:
+            task = self._tasks.get(task_id)
+            if task is None:
+                continue
+
+            status_counts[task.status] = status_counts.get(task.status, 0) + 1
+            if task.status == TaskStatus.SUCCESS.value:
+                successful_task_ids.append(task_id)
+            elif task.status in (
+                TaskStatus.FAILED.value,
+                TaskStatus.CANCELED.value,
+                TaskStatus.SUBMIT_FAILED.value,
+            ):
+                failed_task_ids.append(task_id)
+            elif task.status in (
+                TaskStatus.DISPATCHED.value,
+                TaskStatus.QUEUED.value,
+                TaskStatus.RUNNING.value,
+                TaskStatus.CANCEL_REQUESTED.value,
+            ):
+                active_task_ids.append(task_id)
+            else:
+                pending_task_ids.append(task_id)
+
+            approval_status = self._approval_status_for_task(task_id)
+            audit = self._audits.get(task_id)
+            handoff = self._handoffs.get(task_id)
+            task_summaries.append(
+                WorkflowRunExecutionTaskSummary(
+                    task_id=task.id,
+                    title=task.title,
+                    role_id=task.role_id,
+                    status=task.status,
+                    runner_message=task.runner_message,
+                    started_at=task.started_at,
+                    finished_at=task.finished_at,
+                    exit_code=task.exit_code,
+                    requires_approval=task.requires_approval,
+                    approval_status=approval_status,
+                    consumed_artifact_ids=(list(audit.consumed_artifact_ids) if audit is not None else []),
+                    produced_artifact_ids=(list(audit.produced_artifact_ids) if audit is not None else []),
+                    handoff_summary=handoff.summary if handoff is not None else None,
+                )
+            )
+
+        return WorkflowRunExecutionSummary(
+            run=self._to_workflow_run_read(run),
+            task_status_counts=status_counts,
+            terminal=run.status in (
+                WorkflowRunStatus.SUCCESS.value,
+                WorkflowRunStatus.FAILED.value,
+                WorkflowRunStatus.ABORTED.value,
+            ),
+            partial_completion=bool(successful_task_ids) and len(successful_task_ids) < len(task_summaries),
+            next_dispatch=self.plan_workflow_run_dispatch(run_id, max_tasks=max(len(run.task_ids), 1)),
+            successful_task_ids=successful_task_ids,
+            failed_task_ids=failed_task_ids,
+            active_task_ids=active_task_ids,
+            pending_task_ids=pending_task_ids,
+            tasks=task_summaries,
+        )
 
     def create_event(self, event: EventCreate) -> EventRead:
         if event.run_id is not None and event.run_id not in self._workflow_runs:
@@ -853,6 +1179,7 @@ class InMemoryStore:
         if consumed_artifact_ids is None:
             consumed_artifact_ids = []
 
+        previous_audit = self._audits.get(task.id)
         self._audits[task.id] = TaskAudit(
             task_id=task.id,
             role_id=task.role_id,
@@ -879,6 +1206,12 @@ class InMemoryStore:
             sandbox_error=None,
             handoff=self._handoffs.get(task.id),
             consumed_artifact_ids=consumed_artifact_ids,
+            produced_artifact_ids=list(previous_audit.produced_artifact_ids) if previous_audit is not None else [],
+            retry_attempts=previous_audit.retry_attempts if previous_audit is not None else 0,
+            last_retry_reason=previous_audit.last_retry_reason if previous_audit is not None else None,
+            failure_categories=list(previous_audit.failure_categories) if previous_audit is not None else [],
+            failure_triage_hints=list(previous_audit.failure_triage_hints) if previous_audit is not None else [],
+            recent_event_ids=list(previous_audit.recent_event_ids) if previous_audit is not None else [],
         )
         record = self._tasks.get(task.id)
         if record is None:
@@ -935,19 +1268,57 @@ class InMemoryStore:
             if audit is not None and audit.execution_mode == ExecutionMode.DOCKER_SANDBOX:
                 audit.sandbox_error = record.runner_message
                 self._audits[task_id] = audit
-            released_paths = self._release_task_locks_internal(task_id=task_id, run_id=run_id, emit_event=True)
-            event_payload["released_paths"] = released_paths
-            released_session = self._release_isolated_session_internal(
+            retry_decision = self._evaluate_retry_for_failure(
                 task_id=task_id,
-                run_id=run_id,
-                reason="runner-submit-failed",
-                cleanup_attempted=False,
-                cleanup_succeeded=None,
-                cleanup_message="runner submission failed before execution",
+                failure_status=TaskStatus.SUBMIT_FAILED.value,
+                message=record.runner_message,
+                exit_code=record.exit_code,
+                stdout=record.stdout,
+                stderr=record.stderr,
             )
-            if released_session is not None:
-                event_payload["released_worktree_path"] = released_session.worktree_path
-                event_payload["released_git_branch"] = released_session.git_branch
+            event_payload["failure_category"] = retry_decision["failure_category"]
+            event_payload["recovery_hint"] = retry_decision["recovery_hint"]
+            event_payload["retry_scheduled"] = retry_decision["retry_scheduled"]
+            event_payload["retry_attempt"] = retry_decision["retry_attempt"]
+            event_payload["max_retries"] = retry_decision["max_retries"]
+            event_payload["retries_remaining"] = retry_decision["retries_remaining"]
+            event_payload["retry_reason"] = retry_decision["retry_reason"]
+            if retry_decision["retry_scheduled"]:
+                record.status = TaskStatus.CREATED.value
+                record.runner_message = retry_decision["retry_reason"]
+                record.started_at = None
+                record.finished_at = None
+                record.exit_code = None
+                record.stdout = None
+                record.stderr = None
+                self._append_event(
+                    event_type="task.retry_scheduled",
+                    run_id=run_id,
+                    task_id=task_id,
+                    payload={
+                        "trigger_status": TaskStatus.SUBMIT_FAILED.value,
+                        "failure_category": retry_decision["failure_category"],
+                        "retry_attempt": retry_decision["retry_attempt"],
+                        "max_retries": retry_decision["max_retries"],
+                        "retries_remaining": retry_decision["retries_remaining"],
+                        "retry_reason": retry_decision["retry_reason"],
+                        "recovery_hint": retry_decision["recovery_hint"],
+                    },
+                )
+            else:
+                released_paths = self._release_task_locks_internal(task_id=task_id, run_id=run_id, emit_event=True)
+                event_payload["released_paths"] = released_paths
+                released_session = self._release_isolated_session_internal(
+                    task_id=task_id,
+                    run_id=run_id,
+                    reason="runner-submit-failed",
+                    cleanup_attempted=False,
+                    cleanup_succeeded=None,
+                    cleanup_message="runner submission failed before execution",
+                )
+                if released_session is not None:
+                    event_payload["released_worktree_path"] = released_session.worktree_path
+                    event_payload["released_git_branch"] = released_session.git_branch
             event_type = "task.runner_submit_failed"
 
         self._tasks[task_id] = record
@@ -1094,6 +1465,32 @@ class InMemoryStore:
             "worktree_cleanup_succeeded": worktree_cleanup_succeeded,
             "worktree_cleanup_message": worktree_cleanup_message,
         }
+        retry_decision: dict[str, Any] | None = None
+        if status == RunnerLifecycleStatus.FAILED:
+            retry_decision = self._evaluate_retry_for_failure(
+                task_id=task_id,
+                failure_status=TaskStatus.FAILED.value,
+                message=message,
+                exit_code=exit_code,
+                stdout=stdout,
+                stderr=stderr,
+            )
+            event_payload["failure_category"] = retry_decision["failure_category"]
+            event_payload["recovery_hint"] = retry_decision["recovery_hint"]
+            event_payload["retry_scheduled"] = retry_decision["retry_scheduled"]
+            event_payload["retry_attempt"] = retry_decision["retry_attempt"]
+            event_payload["max_retries"] = retry_decision["max_retries"]
+            event_payload["retries_remaining"] = retry_decision["retries_remaining"]
+            event_payload["retry_reason"] = retry_decision["retry_reason"]
+            if retry_decision["retry_scheduled"]:
+                record.status = TaskStatus.CREATED.value
+                record.runner_message = retry_decision["retry_reason"]
+                record.started_at = None
+                record.finished_at = None
+                record.exit_code = None
+                record.stdout = None
+                record.stderr = None
+                self._tasks[task_id] = record
 
         if handoff is not None and not is_terminal:
             raise ValidationError("handoff payload is accepted only for terminal task status updates")
@@ -1112,7 +1509,7 @@ class InMemoryStore:
                 audit.handoff = saved_handoff
                 self._audits[task_id] = audit
 
-        if is_terminal:
+        if is_terminal and not (retry_decision is not None and retry_decision["retry_scheduled"]):
             released_paths = self._release_task_locks_internal(task_id=task_id, run_id=run_id, emit_event=True)
             event_payload["released_paths"] = released_paths
             released_session = self._release_isolated_session_internal(
@@ -1126,6 +1523,21 @@ class InMemoryStore:
             if released_session is not None:
                 event_payload["released_worktree_path"] = released_session.worktree_path
                 event_payload["released_git_branch"] = released_session.git_branch
+        if retry_decision is not None and retry_decision["retry_scheduled"]:
+            self._append_event(
+                event_type="task.retry_scheduled",
+                run_id=run_id,
+                task_id=task_id,
+                payload={
+                    "trigger_status": status.value,
+                    "failure_category": retry_decision["failure_category"],
+                    "retry_attempt": retry_decision["retry_attempt"],
+                    "max_retries": retry_decision["max_retries"],
+                    "retries_remaining": retry_decision["retries_remaining"],
+                    "retry_reason": retry_decision["retry_reason"],
+                    "recovery_hint": retry_decision["recovery_hint"],
+                },
+            )
         self._append_event(
             event_type="task.runner_status_updated",
             run_id=run_id,
@@ -1207,6 +1619,173 @@ class InMemoryStore:
         released_paths = self._release_task_locks_internal(task_id=task_id, run_id=run_id, emit_event=True)
         self._persist_state()
         return released_paths
+
+    def _assistant_plan_steps(
+        self,
+        template: _WorkflowTemplateRecord,
+        step_task_overrides: dict[str, WorkflowRunStepTaskOverride],
+    ) -> list[AssistantPlanStepRead]:
+        known_step_ids = {step.step_id for step in template.steps}
+        unknown_step_ids = sorted(set(step_task_overrides) - known_step_ids)
+        if unknown_step_ids:
+            unknown_joined = ", ".join(unknown_step_ids)
+            raise ValidationError(f"unknown workflow step overrides: {unknown_joined}")
+
+        steps: list[AssistantPlanStepRead] = []
+        for step in template.steps:
+            resolved_config = self._resolve_step_task_override(
+                template_project_id=template.project_id,
+                override=step_task_overrides.get(step.step_id),
+            )
+            if resolved_config.project_id is not None and resolved_config.project_id not in self._projects:
+                raise NotFoundError(f"project {resolved_config.project_id} not found")
+            steps.append(
+                AssistantPlanStepRead(
+                    step_id=step.step_id,
+                    role_id=step.role_id,
+                    title=step.title,
+                    depends_on=step.depends_on,
+                    required_artifacts=step.required_artifacts,
+                    task_config=resolved_config,
+                )
+            )
+        return steps
+
+    @staticmethod
+    def _resolve_step_task_override(
+        *,
+        template_project_id: int | None,
+        override: WorkflowRunStepTaskOverride | None,
+    ) -> WorkflowRunStepTaskOverride:
+        effective = override or WorkflowRunStepTaskOverride()
+        project_id = effective.project_id
+        if project_id is None and effective.execution_mode != ExecutionMode.NO_WORKSPACE:
+            project_id = template_project_id
+        try:
+            return WorkflowRunStepTaskOverride(
+                context7_mode=effective.context7_mode,
+                execution_mode=effective.execution_mode,
+                requires_approval=effective.requires_approval,
+                project_id=project_id,
+                lock_paths=effective.lock_paths,
+                sandbox=effective.sandbox,
+            )
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+
+    def _assistant_dispatch_candidates(self, run_id: int) -> tuple[list[tuple[int, list[int]]], list[int]]:
+        run = self._workflow_runs.get(run_id)
+        if run is None:
+            raise NotFoundError(f"workflow run {run_id} not found")
+
+        ready: list[tuple[int, list[int]]] = []
+        blocked_by_approval: list[int] = []
+        for task_id in run.task_ids:
+            task = self._tasks.get(task_id)
+            if task is None:
+                continue
+            if task.status not in (TaskStatus.CREATED.value, TaskStatus.SUBMIT_FAILED.value):
+                continue
+
+            dependencies = run.step_dependencies.get(task_id, [])
+            dependencies_ready = all(
+                self._tasks.get(dep_task_id) is not None
+                and self._tasks[dep_task_id].status == TaskStatus.SUCCESS.value
+                for dep_task_id in dependencies
+            )
+            if not dependencies_ready:
+                continue
+
+            consumed_artifact_ids, _missing_requirements = self._resolve_handoff_artifacts(
+                run_id=run_id,
+                task_id=task_id,
+            )
+            if consumed_artifact_ids is None:
+                continue
+
+            approval_status = self._approval_status_for_task(task_id)
+            if task.requires_approval and approval_status != ApprovalStatus.APPROVED:
+                blocked_by_approval.append(task_id)
+                continue
+
+            ready.append((task_id, consumed_artifact_ids))
+        return ready, blocked_by_approval
+
+    def _approval_status_for_task(self, task_id: int) -> ApprovalStatus | None:
+        task = self._tasks.get(task_id)
+        if task is None or not task.requires_approval:
+            return None
+        approval_id = self._task_approval.get(task_id)
+        if approval_id is None:
+            return None
+        approval = self._approvals.get(approval_id)
+        if approval is None:
+            return None
+        return ApprovalStatus(approval.status)
+
+    def _build_assistant_machine_summary(
+        self,
+        *,
+        run_id: int,
+        phase: str,
+        preloaded_events: list[EventRead] | None = None,
+        preloaded_artifacts: list[ArtifactRead] | None = None,
+        preloaded_handoffs: list[TaskHandoffRead] | None = None,
+    ) -> AssistantMachineSummary:
+        run = self._workflow_runs.get(run_id)
+        if run is None:
+            raise NotFoundError(f"workflow run {run_id} not found")
+
+        task_records = [self._tasks[task_id] for task_id in run.task_ids if task_id in self._tasks]
+        status_counts: dict[str, int] = {}
+        for task in task_records:
+            status_counts[task.status] = status_counts.get(task.status, 0) + 1
+
+        ready_candidates, blocked_by_approval_task_ids = self._assistant_dispatch_candidates(run_id)
+        terminal_task_ids = [task.id for task in task_records if self._is_terminal_task_status(task.status)]
+        failed_task_ids = [
+            task.id
+            for task in task_records
+            if task.status in (TaskStatus.FAILED.value, TaskStatus.CANCELED.value, TaskStatus.SUBMIT_FAILED.value)
+        ]
+
+        artifacts = preloaded_artifacts if preloaded_artifacts is not None else self.list_artifacts(run_id=run_id, limit=200)
+        handoffs = preloaded_handoffs if preloaded_handoffs is not None else self.list_handoffs(run_id=run_id, limit=200)
+        events = preloaded_events if preloaded_events is not None else self.list_events(run_id=run_id, limit=50)
+
+        produced_artifact_ids: list[int] = []
+        for artifact in artifacts:
+            if artifact.id in produced_artifact_ids:
+                continue
+            produced_artifact_ids.append(artifact.id)
+
+        handoff_task_ids: list[int] = []
+        for handoff in handoffs:
+            if handoff.task_id in handoff_task_ids:
+                continue
+            handoff_task_ids.append(handoff.task_id)
+
+        recent_event_types: list[str] = []
+        for event in events[-20:]:
+            if event.event_type in recent_event_types:
+                continue
+            recent_event_types.append(event.event_type)
+
+        return AssistantMachineSummary(
+            phase=phase,
+            run_id=run_id,
+            workflow_template_id=run.workflow_template_id,
+            workflow_status=run.status,
+            total_tasks=len(run.task_ids),
+            task_status_counts=status_counts,
+            ready_task_ids=[task_id for task_id, _ in ready_candidates],
+            blocked_by_approval_task_ids=blocked_by_approval_task_ids,
+            terminal_task_ids=terminal_task_ids,
+            failed_task_ids=failed_task_ids,
+            produced_artifact_ids=produced_artifact_ids,
+            handoff_task_ids=handoff_task_ids,
+            recent_event_types=recent_event_types,
+        )
 
     def _resolve_handoff_artifacts(self, *, run_id: int, task_id: int) -> tuple[list[int] | None, list[dict[str, Any]]]:
         run = self._workflow_runs.get(run_id)
@@ -1673,6 +2252,15 @@ class InMemoryStore:
             )
         return validated
 
+    def _approval_status_for_task(self, task_id: int) -> ApprovalStatus | None:
+        approval_id = self._task_approval.get(task_id)
+        if approval_id is None:
+            return None
+        approval = self._approvals.get(approval_id)
+        if approval is None:
+            return None
+        return ApprovalStatus(approval.status)
+
     def _require_approval_ready(
         self,
         *,
@@ -1766,6 +2354,180 @@ class InMemoryStore:
                 payload={"released_paths": released_paths},
             )
         return released_paths
+
+    def _evaluate_retry_for_failure(
+        self,
+        *,
+        task_id: int,
+        failure_status: str,
+        message: str | None,
+        exit_code: int | None,
+        stdout: str | None,
+        stderr: str | None,
+    ) -> dict[str, Any]:
+        category = self._classify_failure_category(
+            failure_status=failure_status,
+            message=message,
+            stdout=stdout,
+            stderr=stderr,
+        )
+        hint = self._recovery_hint_for_category(category)
+        max_retries, retry_on = self._resolve_retry_policy(task_id)
+
+        audit = self._audits.get(task_id)
+        retry_attempt = 0
+        if audit is not None:
+            retry_attempt = audit.retry_attempts
+            if category is not None:
+                self._append_unique(audit.failure_categories, category)
+            if hint is not None:
+                self._append_unique(audit.failure_triage_hints, hint)
+
+        retry_allowed = (
+            audit is not None
+            and category is not None
+            and max_retries > 0
+            and category in retry_on
+            and retry_attempt < max_retries
+        )
+
+        retry_reason: str | None = None
+        if retry_allowed:
+            retry_attempt += 1
+            retries_remaining = max_retries - retry_attempt
+            retry_reason = f"retry scheduled after transient {category} failure ({retry_attempt}/{max_retries})"
+            if message:
+                retry_reason = f"{retry_reason}: {message}"
+            if audit is not None:
+                audit.retry_attempts = retry_attempt
+                audit.last_retry_reason = retry_reason
+                self._audits[task_id] = audit
+        else:
+            retries_remaining = max(max_retries - retry_attempt, 0)
+            if audit is not None:
+                if category is None:
+                    audit.last_retry_reason = "retry policy skipped: failure category is not transient"
+                elif max_retries <= 0:
+                    audit.last_retry_reason = "retry policy skipped: max_retries=0"
+                elif category not in retry_on:
+                    audit.last_retry_reason = f"retry policy skipped: category '{category}' not in retry_on"
+                elif retry_attempt >= max_retries:
+                    audit.last_retry_reason = f"retry policy exhausted at {retry_attempt}/{max_retries}"
+                self._audits[task_id] = audit
+
+        return {
+            "retry_scheduled": retry_allowed,
+            "failure_category": category,
+            "recovery_hint": hint,
+            "retry_attempt": retry_attempt,
+            "max_retries": max_retries,
+            "retries_remaining": retries_remaining,
+            "retry_reason": retry_reason,
+            "exit_code": exit_code,
+        }
+
+    def _resolve_retry_policy(self, task_id: int) -> tuple[int, set[str]]:
+        task = self._tasks.get(task_id)
+        if task is None:
+            return 0, set()
+        role = self._roles.get(task.role_id)
+        if role is None:
+            return 0, set()
+
+        retry_policy = role.execution_constraints.get("retry_policy")
+        if not isinstance(retry_policy, dict):
+            return 0, set()
+
+        raw_max_retries = retry_policy.get("max_retries")
+        if isinstance(raw_max_retries, bool):
+            max_retries = 0
+        elif isinstance(raw_max_retries, int):
+            max_retries = raw_max_retries
+        else:
+            max_retries = 0
+        max_retries = max(0, min(max_retries, 10))
+
+        raw_retry_on = retry_policy.get("retry_on")
+        retry_on: set[str] = set()
+        if isinstance(raw_retry_on, list):
+            for value in raw_retry_on:
+                if not isinstance(value, str):
+                    continue
+                normalized = value.strip().lower()
+                if normalized in {"network", "flaky-test", "runner-transient"}:
+                    retry_on.add(normalized)
+        return max_retries, retry_on
+
+    @staticmethod
+    def _classify_failure_category(
+        *,
+        failure_status: str,
+        message: str | None,
+        stdout: str | None,
+        stderr: str | None,
+    ) -> str | None:
+        text_blob = " ".join([message or "", stdout or "", stderr or ""]).lower()
+        if not text_blob and failure_status == TaskStatus.SUBMIT_FAILED.value:
+            return "runner-transient"
+
+        network_markers = (
+            "timeout",
+            "timed out",
+            "connection refused",
+            "connection reset",
+            "network",
+            "dns",
+            "name or service not known",
+            "temporary failure in name resolution",
+            "503",
+            "504",
+            "502",
+        )
+        if any(marker in text_blob for marker in network_markers):
+            return "network"
+
+        flaky_markers = (
+            "flaky",
+            "nondeterministic",
+            "race condition",
+            "intermittent",
+            "failed test",
+            "assertionerror",
+            "pytest",
+        )
+        if any(marker in text_blob for marker in flaky_markers):
+            return "flaky-test"
+
+        runner_transient_markers = (
+            "runner submit failed",
+            "runner unavailable",
+            "runner busy",
+            "temporary",
+            "try again",
+            "resource temporarily unavailable",
+            "service unavailable",
+        )
+        if any(marker in text_blob for marker in runner_transient_markers):
+            return "runner-transient"
+
+        if failure_status == TaskStatus.SUBMIT_FAILED.value:
+            return "runner-transient"
+        return None
+
+    @staticmethod
+    def _recovery_hint_for_category(category: str | None) -> str | None:
+        if category == "network":
+            return "Network/timeout failure detected. Verify host-runner connectivity and retry."
+        if category == "flaky-test":
+            return "Flaky test signal detected. Re-run failing tests with focused logs before escalation."
+        if category == "runner-transient":
+            return "Runner transient failure detected. Verify runner health/capacity and retry."
+        return None
+
+    @staticmethod
+    def _append_unique(values: list[str], candidate: str) -> None:
+        if candidate not in values:
+            values.append(candidate)
 
     def _recompute_workflow_run_status(self, run_id: int) -> None:
         run = self._workflow_runs.get(run_id)
@@ -2083,8 +2845,8 @@ class InMemoryStore:
             exit_code=record.exit_code,
         )
 
-    @staticmethod
-    def _to_workflow_run_read(record: _WorkflowRunRecord) -> WorkflowRunRead:
+    def _to_workflow_run_read(self, record: _WorkflowRunRecord) -> WorkflowRunRead:
+        retry_summary, failure_categories, failure_triage_hints = self._build_workflow_retry_surface(record)
         return WorkflowRunRead(
             id=record.id,
             workflow_template_id=record.workflow_template_id,
@@ -2093,7 +2855,56 @@ class InMemoryStore:
             initiated_by=record.initiated_by,
             created_at=record.created_at,
             updated_at=record.updated_at,
+            retry_summary=retry_summary,
+            failure_categories=failure_categories,
+            failure_triage_hints=failure_triage_hints,
         )
+
+    def _build_workflow_retry_surface(
+        self, record: _WorkflowRunRecord
+    ) -> tuple[dict[str, Any], list[str], list[str]]:
+        total_retries = 0
+        retried_task_ids: list[int] = []
+        exhausted_task_ids: list[int] = []
+        failure_categories: list[str] = []
+        failure_triage_hints: list[str] = []
+
+        for task_id in record.task_ids:
+            audit = self._audits.get(task_id)
+            if audit is None:
+                continue
+            if audit.retry_attempts > 0:
+                total_retries += audit.retry_attempts
+                retried_task_ids.append(task_id)
+            for category in audit.failure_categories:
+                self._append_unique(failure_categories, category)
+            for hint in audit.failure_triage_hints:
+                self._append_unique(failure_triage_hints, hint)
+
+            max_retries, _retry_on = self._resolve_retry_policy(task_id)
+            task = self._tasks.get(task_id)
+            if (
+                task is not None
+                and task.status in (TaskStatus.FAILED.value, TaskStatus.SUBMIT_FAILED.value)
+                and max_retries > 0
+                and audit.retry_attempts >= max_retries
+            ):
+                exhausted_task_ids.append(task_id)
+
+        if exhausted_task_ids:
+            self._append_unique(
+                failure_triage_hints,
+                "Retry budget exhausted for one or more tasks. Manual intervention is required.",
+            )
+
+        retry_summary: dict[str, Any] = {
+            "total_retries": total_retries,
+            "retried_task_ids": retried_task_ids,
+        }
+        if exhausted_task_ids:
+            retry_summary["exhausted_task_ids"] = exhausted_task_ids
+
+        return retry_summary, failure_categories, failure_triage_hints
 
     @staticmethod
     def _utc_now() -> str:

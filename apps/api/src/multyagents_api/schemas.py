@@ -345,18 +345,65 @@ class TaskAudit(BaseModel):
     handoff: TaskHandoffRead | None = None
     consumed_artifact_ids: list[int] = Field(default_factory=list)
     produced_artifact_ids: list[int] = Field(default_factory=list)
+    retry_attempts: int = 0
+    last_retry_reason: str | None = None
+    failure_categories: list[str] = Field(default_factory=list)
+    failure_triage_hints: list[str] = Field(default_factory=list)
     recent_event_ids: list[int] = Field(default_factory=list)
+
+
+class WorkflowRunStepTaskOverride(BaseModel):
+    context7_mode: Context7Mode = Context7Mode.INHERIT
+    execution_mode: ExecutionMode = ExecutionMode.NO_WORKSPACE
+    requires_approval: bool = False
+    project_id: int | None = None
+    lock_paths: list[str] = Field(default_factory=list)
+    sandbox: SandboxConfig | None = None
+
+    @model_validator(mode="after")
+    def validate_workspace_fields(self) -> "WorkflowRunStepTaskOverride":
+        normalized_lock_paths: list[str] = []
+        for raw_path in self.lock_paths:
+            candidate = Path(raw_path)
+            if not candidate.is_absolute():
+                raise ValueError("lock_paths values must be absolute paths")
+            normalized_lock_paths.append(str(candidate.resolve()))
+
+        if self.execution_mode == ExecutionMode.SHARED_WORKSPACE:
+            if self.project_id is None:
+                raise ValueError("project_id is required for shared-workspace mode")
+            if not normalized_lock_paths:
+                raise ValueError("lock_paths is required for shared-workspace mode")
+        if self.execution_mode == ExecutionMode.ISOLATED_WORKTREE:
+            if self.project_id is None:
+                raise ValueError("project_id is required for isolated-worktree mode")
+        if self.execution_mode == ExecutionMode.DOCKER_SANDBOX:
+            if self.project_id is None:
+                raise ValueError("project_id is required for docker-sandbox mode")
+            if self.sandbox is None:
+                raise ValueError("sandbox is required for docker-sandbox mode")
+        if self.execution_mode != ExecutionMode.DOCKER_SANDBOX and self.sandbox is not None:
+            raise ValueError("sandbox is supported only for docker-sandbox mode")
+
+        self.lock_paths = normalized_lock_paths
+        return self
 
 
 class WorkflowRunCreate(BaseModel):
     workflow_template_id: int | None = None
     task_ids: list[int] = Field(default_factory=list)
     initiated_by: str | None = None
+    step_task_overrides: dict[str, WorkflowRunStepTaskOverride] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_inputs(self) -> "WorkflowRunCreate":
         if self.workflow_template_id is None and not self.task_ids:
             raise ValueError("workflow_template_id or task_ids is required")
+        if self.step_task_overrides and self.workflow_template_id is None:
+            raise ValueError("step_task_overrides requires workflow_template_id")
+        if self.step_task_overrides and self.task_ids:
+            raise ValueError("step_task_overrides is supported only when task_ids is empty")
+        self.step_task_overrides = _normalize_step_override_map(self.step_task_overrides)
         return self
 
 
@@ -368,6 +415,9 @@ class WorkflowRunRead(BaseModel):
     initiated_by: str | None = None
     created_at: str
     updated_at: str
+    retry_summary: dict[str, Any] = Field(default_factory=dict)
+    failure_categories: list[str] = Field(default_factory=list)
+    failure_triage_hints: list[str] = Field(default_factory=list)
 
 
 class WorkflowRunDispatchReadyResponse(BaseModel):
@@ -376,6 +426,70 @@ class WorkflowRunDispatchReadyResponse(BaseModel):
     task_id: int | None = None
     reason: str | None = None
     dispatch: DispatchResponse | None = None
+
+
+class WorkflowRunControlLoopRequest(BaseModel):
+    max_dispatch: int = Field(default=10, ge=1, le=100)
+
+
+class WorkflowRunDispatchPlanItem(BaseModel):
+    task_id: int
+    consumed_artifact_ids: list[int] = Field(default_factory=list)
+
+
+class WorkflowRunDispatchBlockedItem(BaseModel):
+    task_id: int | None = None
+    reason: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowRunDispatchPlan(BaseModel):
+    ready: list[WorkflowRunDispatchPlanItem] = Field(default_factory=list)
+    blocked: list[WorkflowRunDispatchBlockedItem] = Field(default_factory=list)
+
+
+class WorkflowRunSpawnResult(BaseModel):
+    task_id: int
+    submitted: bool = False
+    task_status: TaskStatus
+    dispatch: DispatchResponse | None = None
+    error: str | None = None
+
+
+class WorkflowRunExecutionTaskSummary(BaseModel):
+    task_id: int
+    title: str
+    role_id: int
+    status: TaskStatus
+    runner_message: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    exit_code: int | None = None
+    requires_approval: bool = False
+    approval_status: ApprovalStatus | None = None
+    consumed_artifact_ids: list[int] = Field(default_factory=list)
+    produced_artifact_ids: list[int] = Field(default_factory=list)
+    handoff_summary: str | None = None
+
+
+class WorkflowRunExecutionSummary(BaseModel):
+    run: WorkflowRunRead
+    task_status_counts: dict[str, int] = Field(default_factory=dict)
+    terminal: bool = False
+    partial_completion: bool = False
+    next_dispatch: WorkflowRunDispatchPlan = Field(default_factory=WorkflowRunDispatchPlan)
+    successful_task_ids: list[int] = Field(default_factory=list)
+    failed_task_ids: list[int] = Field(default_factory=list)
+    active_task_ids: list[int] = Field(default_factory=list)
+    pending_task_ids: list[int] = Field(default_factory=list)
+    tasks: list[WorkflowRunExecutionTaskSummary] = Field(default_factory=list)
+
+
+class WorkflowRunControlLoopResponse(BaseModel):
+    run_id: int
+    plan: WorkflowRunDispatchPlan
+    spawn: list[WorkflowRunSpawnResult] = Field(default_factory=list)
+    aggregate: WorkflowRunExecutionSummary
 
 
 class EventCreate(BaseModel):
@@ -524,6 +638,91 @@ class WorkflowTemplateRead(BaseModel):
     steps: list[WorkflowStep]
 
 
+class AssistantIntentPlanRequest(BaseModel):
+    workflow_template_id: int
+    initiated_by: str | None = "assistant"
+    step_task_overrides: dict[str, WorkflowRunStepTaskOverride] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def normalize_inputs(self) -> "AssistantIntentPlanRequest":
+        self.step_task_overrides = _normalize_step_override_map(self.step_task_overrides)
+        return self
+
+
+class AssistantIntentStartRequest(AssistantIntentPlanRequest):
+    dispatch_ready: bool = True
+
+
+class AssistantPlanStepRead(BaseModel):
+    step_id: str
+    role_id: int
+    title: str
+    depends_on: list[str] = Field(default_factory=list)
+    required_artifacts: list[WorkflowArtifactRequirement] = Field(default_factory=list)
+    task_config: WorkflowRunStepTaskOverride
+
+
+class AssistantMachineSummary(BaseModel):
+    contract_version: str = "v1"
+    phase: str = Field(min_length=1)
+    run_id: int | None = None
+    workflow_template_id: int | None = None
+    workflow_status: WorkflowRunStatus | None = None
+    total_tasks: int = 0
+    task_status_counts: dict[str, int] = Field(default_factory=dict)
+    ready_task_ids: list[int] = Field(default_factory=list)
+    blocked_by_approval_task_ids: list[int] = Field(default_factory=list)
+    terminal_task_ids: list[int] = Field(default_factory=list)
+    failed_task_ids: list[int] = Field(default_factory=list)
+    produced_artifact_ids: list[int] = Field(default_factory=list)
+    handoff_task_ids: list[int] = Field(default_factory=list)
+    planned_step_ids: list[str] = Field(default_factory=list)
+    planned_approval_step_ids: list[str] = Field(default_factory=list)
+    recent_event_types: list[str] = Field(default_factory=list)
+
+
+class AssistantIntentPlanResponse(BaseModel):
+    workflow_template_id: int
+    initiated_by: str | None = None
+    steps: list[AssistantPlanStepRead] = Field(default_factory=list)
+    machine_summary: AssistantMachineSummary
+
+
+class AssistantIntentStartResponse(BaseModel):
+    run: WorkflowRunRead
+    steps: list[AssistantPlanStepRead] = Field(default_factory=list)
+    dispatches: list[DispatchResponse] = Field(default_factory=list)
+    blocked_by_approval_task_ids: list[int] = Field(default_factory=list)
+    machine_summary: AssistantMachineSummary
+
+
+class AssistantIntentStatusRequest(BaseModel):
+    run_id: int
+    include_tasks: bool = True
+
+
+class AssistantIntentStatusResponse(BaseModel):
+    run: WorkflowRunRead
+    tasks: list[TaskRead] = Field(default_factory=list)
+    machine_summary: AssistantMachineSummary
+
+
+class AssistantIntentReportRequest(BaseModel):
+    run_id: int
+    event_limit: int = Field(default=200, ge=1, le=1000)
+    artifact_limit: int = Field(default=200, ge=1, le=1000)
+    handoff_limit: int = Field(default=200, ge=1, le=1000)
+
+
+class AssistantIntentReportResponse(BaseModel):
+    run: WorkflowRunRead
+    tasks: list[TaskRead] = Field(default_factory=list)
+    events: list[EventRead] = Field(default_factory=list)
+    artifacts: list[ArtifactRead] = Field(default_factory=list)
+    handoffs: list[TaskHandoffRead] = Field(default_factory=list)
+    machine_summary: AssistantMachineSummary
+
+
 def _normalize_string_list(values: list[str]) -> list[str]:
     normalized: list[str] = []
     for value in values:
@@ -533,4 +732,18 @@ def _normalize_string_list(values: list[str]) -> list[str]:
         if trimmed in normalized:
             continue
         normalized.append(trimmed)
+    return normalized
+
+
+def _normalize_step_override_map(
+    values: dict[str, WorkflowRunStepTaskOverride],
+) -> dict[str, WorkflowRunStepTaskOverride]:
+    normalized: dict[str, WorkflowRunStepTaskOverride] = {}
+    for step_id, override in values.items():
+        trimmed = step_id.strip()
+        if not trimmed:
+            raise ValueError("step_task_overrides keys must be non-empty")
+        if trimmed in normalized:
+            raise ValueError(f"duplicate step_task_overrides key: {trimmed}")
+        normalized[trimmed] = override
     return normalized

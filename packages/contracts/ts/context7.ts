@@ -73,6 +73,10 @@ export type TaskAudit = {
   project_id: number | null;
   lock_paths: string[];
   handoff: TaskHandoffRead | null;
+  retry_attempts?: number;
+  last_retry_reason?: string | null;
+  failure_categories?: string[];
+  failure_triage_hints?: string[];
 };
 
 export type WorkflowRunRead = {
@@ -83,6 +87,9 @@ export type WorkflowRunRead = {
   initiated_by: string | null;
   created_at: string;
   updated_at: string;
+  retry_summary?: Record<string, unknown>;
+  failure_categories?: string[];
+  failure_triage_hints?: string[];
 };
 
 export type WorkflowRunDispatchReadyResponse = {

@@ -170,6 +170,16 @@
         },
         "handoff": {
           "anyOf": [{ "$ref": "#/$defs/TaskHandoffRead" }, { "type": "null" }]
+        },
+        "retry_attempts": { "type": "integer", "minimum": 0 },
+        "last_retry_reason": { "type": ["string", "null"] },
+        "failure_categories": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "failure_triage_hints": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
         }
       },
       "additionalProperties": false
@@ -249,7 +259,16 @@
         "status": { "$ref": "#/$defs/WorkflowRunStatus" },
         "initiated_by": { "type": ["string", "null"] },
         "created_at": { "type": "string", "minLength": 1 },
-        "updated_at": { "type": "string", "minLength": 1 }
+        "updated_at": { "type": "string", "minLength": 1 },
+        "retry_summary": { "type": "object" },
+        "failure_categories": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "failure_triage_hints": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
       },
       "additionalProperties": false
     },

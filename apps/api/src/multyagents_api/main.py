@@ -7,6 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from multyagents_api.runner_client import cancel_in_runner, submit_to_runner
 from multyagents_api.schemas import (
+    AssistantIntentPlanRequest,
+    AssistantIntentPlanResponse,
+    AssistantIntentReportRequest,
+    AssistantIntentReportResponse,
+    AssistantIntentStartRequest,
+    AssistantIntentStartResponse,
+    AssistantIntentStatusRequest,
+    AssistantIntentStatusResponse,
     ApprovalDecisionRequest,
     ApprovalRead,
     ArtifactCreate,
@@ -31,9 +39,13 @@ from multyagents_api.schemas import (
     TaskHandoffRead,
     TaskLocksReleaseResponse,
     TaskRead,
+    WorkflowRunControlLoopRequest,
+    WorkflowRunControlLoopResponse,
     WorkflowRunCreate,
     WorkflowRunDispatchReadyResponse,
+    WorkflowRunExecutionSummary,
     WorkflowRunRead,
+    WorkflowRunSpawnResult,
     WorkflowTemplateCreate,
     WorkflowTemplateRead,
     WorkflowTemplateUpdate,
@@ -258,6 +270,8 @@ def create_workflow_run(payload: WorkflowRunCreate) -> WorkflowRunRead:
         return store.create_workflow_run(payload)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/workflow-runs", response_model=list[WorkflowRunRead])
@@ -339,6 +353,112 @@ def dispatch_ready_workflow_run(run_id: int) -> WorkflowRunDispatchReadyResponse
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/assistant/intents/plan", response_model=AssistantIntentPlanResponse)
+def plan_assistant_intent(payload: AssistantIntentPlanRequest) -> AssistantIntentPlanResponse:
+    try:
+        return store.plan_assistant_intent(payload)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/assistant/intents/start", response_model=AssistantIntentStartResponse)
+def start_assistant_intent(payload: AssistantIntentStartRequest) -> AssistantIntentStartResponse:
+    try:
+        return store.start_assistant_intent(payload, submitter=submit_to_runner)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/workflow-runs/{run_id}/control-loop", response_model=WorkflowRunControlLoopResponse)
+def execute_workflow_run_control_loop(
+    run_id: int,
+    payload: WorkflowRunControlLoopRequest | None = None,
+) -> WorkflowRunControlLoopResponse:
+    request = payload or WorkflowRunControlLoopRequest()
+    try:
+        plan = store.plan_workflow_run_dispatch(run_id, max_tasks=request.max_dispatch)
+        spawn_results: list[WorkflowRunSpawnResult] = []
+        for plan_item in plan.ready:
+            try:
+                dispatch_result = store.dispatch_task(
+                    plan_item.task_id,
+                    consumed_artifact_ids=plan_item.consumed_artifact_ids,
+                )
+                runner_submission = submit_to_runner(dispatch_result.runner_payload)
+                task_after_submission = store.apply_runner_submission(plan_item.task_id, runner_submission)
+                dispatch_response = DispatchResponse(
+                    task_id=dispatch_result.task_id,
+                    resolved_context7_enabled=dispatch_result.resolved_context7_enabled,
+                    runner_payload=dispatch_result.runner_payload,
+                    runner_submission=runner_submission,
+                )
+                spawn_results.append(
+                    WorkflowRunSpawnResult(
+                        task_id=plan_item.task_id,
+                        submitted=runner_submission.submitted,
+                        task_status=task_after_submission.status,
+                        dispatch=dispatch_response,
+                    )
+                )
+            except (ConflictError, ValidationError) as exc:
+                current_task = store.get_task(plan_item.task_id)
+                spawn_results.append(
+                    WorkflowRunSpawnResult(
+                        task_id=plan_item.task_id,
+                        submitted=False,
+                        task_status=current_task.status,
+                        error=str(exc),
+                    )
+                )
+        aggregate = store.get_workflow_run_execution_summary(run_id)
+        return WorkflowRunControlLoopResponse(
+            run_id=run_id,
+            plan=plan,
+            spawn=spawn_results,
+            aggregate=aggregate,
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/assistant/intents/status", response_model=AssistantIntentStatusResponse)
+def status_assistant_intent(payload: AssistantIntentStatusRequest) -> AssistantIntentStatusResponse:
+    try:
+        return store.status_assistant_intent(payload)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/assistant/intents/report", response_model=AssistantIntentReportResponse)
+def report_assistant_intent(payload: AssistantIntentReportRequest) -> AssistantIntentReportResponse:
+    try:
+        return store.report_assistant_intent(payload)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/workflow-runs/{run_id}/execution-summary", response_model=WorkflowRunExecutionSummary)
+def get_workflow_run_execution_summary(run_id: int) -> WorkflowRunExecutionSummary:
+    try:
+        return store.get_workflow_run_execution_summary(run_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/events", response_model=list[EventRead])
