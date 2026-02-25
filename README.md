@@ -35,6 +35,7 @@ Useful commands:
 ./scripts/multyagents logs
 ./scripts/multyagents down
 ./scripts/multyagents e2e
+./scripts/multyagents stress-smoke
 ./scripts/multyagents desktop
 ```
 
@@ -74,6 +75,16 @@ Host runner should run outside Docker.
 cd infra/compose
 ./scripts/run-e2e.sh
 ```
+
+### Parallel workflow stress smoke
+
+```bash
+STRESS_RUNS=20 STRESS_PARALLELISM=6 ./scripts/multyagents stress-smoke
+```
+
+Optional outputs:
+- `STRESS_OUTPUT_JSON=/tmp/task-069-summary.json` to persist structured summary.
+- `STRESS_RUN_TIMEOUT_SECONDS=120` to tune timeout for each run worker.
 
 ## Workflow builder docs
 

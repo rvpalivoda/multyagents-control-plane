@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "vitest run --no-file-parallelism --pool=forks --poolOptions.forks.singleFork=true",
     "test:smoke": "../../scripts/ui-test-smoke.sh"
   },
   "dependencies": {

@@ -10,6 +10,19 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",
-    globals: true
+    globals: true,
+    pool: "forks",
+    poolOptions: {
+      forks: {
+        singleFork: true
+      }
+    },
+    fileParallelism: false,
+    clearMocks: true,
+    restoreMocks: true,
+    unstubGlobals: true,
+    testTimeout: 20_000,
+    hookTimeout: 20_000,
+    teardownTimeout: 10_000
   }
 });

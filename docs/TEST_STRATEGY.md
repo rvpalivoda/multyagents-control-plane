@@ -15,6 +15,10 @@ Provide high confidence for daily production-like local usage across orchestrati
    - FastAPI endpoints via `TestClient`
    - Contract stability (additive fields only)
    - Negative paths and policy enforcement
+   - Failure injection regression pack (`apps/api/tests/test_api_failure_injection_regression.py`):
+     - runner unreachable/network-style submit failure
+     - permission/policy denial triage path
+     - retry + triage surface consistency (`task`, `task audit`, `events`, `workflow run`)
 
 3. **UI critical-path tests**
    - Workflow builder

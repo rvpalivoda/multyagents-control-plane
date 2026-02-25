@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 COMPOSE_DIR="$ROOT_DIR/infra/compose"
 RUNNER_DIR="$ROOT_DIR/apps/host-runner"
+SCENARIO_SCRIPT="${E2E_SCENARIO_SCRIPT:-e2e_smoke.py}"
 
 HOST_RUNNER_PORT_DEFAULT=48070
 HOST_RUNNER_PORT_MAX=48090
@@ -81,9 +82,14 @@ RUNNER_PID=$!
 echo "[e2e] starting docker compose stack"
 (cd "$COMPOSE_DIR" && docker compose up --build -d)
 
-echo "[e2e] running smoke scenario"
+if [[ ! -f "$COMPOSE_DIR/scripts/$SCENARIO_SCRIPT" ]]; then
+  echo "[e2e] error: scenario script not found: $COMPOSE_DIR/scripts/$SCENARIO_SCRIPT" >&2
+  exit 1
+fi
+
+echo "[e2e] running smoke scenario: $SCENARIO_SCRIPT"
 E2E_API_BASE="${E2E_API_BASE:-http://localhost:48000}" \
 E2E_TIMEOUT_SECONDS="${E2E_TIMEOUT_SECONDS:-90}" \
-python3 "$COMPOSE_DIR/scripts/e2e_smoke.py"
+python3 "$COMPOSE_DIR/scripts/$SCENARIO_SCRIPT"
 
 echo "[e2e] completed successfully"

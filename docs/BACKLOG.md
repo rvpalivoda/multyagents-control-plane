@@ -106,12 +106,15 @@
 
 ### EPIC-12 Test hardening and reliability gates
 - `TASK-065` (`P0`, `done`): Real-case E2E API scenarios
-- `TASK-066` (`P1`, `todo`): E2E reliability gate script
-- `TASK-067` (`P1`, `todo`): Failure injection regression pack
+- `TASK-066` (`P1`, `done`): E2E reliability gate script
+- `TASK-067` (`P1`, `done`): Failure injection regression pack
 
 ### EPIC-12 Test hardening and reliability gates
-- `TASK-068` (`P1`, `in_progress`): UI test stability hardening
-- `TASK-069` (`P1`, `in_progress`): Parallel stress smoke for workflow runs
+- `TASK-068` (`P1`, `done`): UI test stability hardening
+- `TASK-069` (`P1`, `done`): Parallel stress smoke for workflow runs
+
+### EPIC-12 Test hardening and reliability gates
+- `TASK-070` (`P0`, `done`): Fix stress-smoke scenario script packaging
 
 ## Operating rule
 

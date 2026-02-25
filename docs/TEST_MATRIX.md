@@ -7,6 +7,7 @@
 | UI build | `cd apps/ui && npm run build` | success |
 | UI smoke | `./scripts/ui-test-smoke.sh` | all passed |
 | Compose E2E | `./scripts/multyagents e2e` | smoke passed |
+| Parallel stress smoke | `STRESS_RUNS=20 STRESS_PARALLELISM=6 ./scripts/multyagents stress-smoke` | summary `failed=0` |
 | Local readiness | `./scripts/multyagents readiness` | scenarios run + evidence generated |
 
 ## Real-case checks

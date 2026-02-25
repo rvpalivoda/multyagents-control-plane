@@ -247,9 +247,48 @@ cmd_e2e() {
   (cd "$COMPOSE_DIR" && ./scripts/run-e2e.sh)
 }
 
+cmd_stress_smoke() {
+  require_command docker
+  require_command python3
+  require_command curl
+  (cd "$COMPOSE_DIR" && E2E_SCENARIO_SCRIPT=parallel_workflow_stress_smoke.py ./scripts/run-e2e.sh)
+}
+
 cmd_readiness() {
   require_command python3
   (cd "$ROOT_DIR" && ./scripts/task-061-readiness.sh)
+}
+
+cmd_gate() {
+  require_command python3
+  require_command docker
+  local failed=0
+
+  echo "[gate] 1/6 API regression"
+  (cd "$ROOT_DIR/apps/api" && .venv/bin/pytest -q) || failed=1
+
+  echo "[gate] 2/6 Telegram bot regression"
+  (cd "$ROOT_DIR/apps/telegram-bot" && .venv/bin/pytest -q) || failed=1
+
+  echo "[gate] 3/6 UI production build"
+  (cd "$ROOT_DIR/apps/ui" && npm run build) || failed=1
+
+  echo "[gate] 4/6 UI smoke tests"
+  (cd "$ROOT_DIR" && ./scripts/ui-test-smoke.sh) || failed=1
+
+  echo "[gate] 5/6 Local readiness scenarios"
+  (cd "$ROOT_DIR" && ./scripts/multyagents readiness) || failed=1
+
+  echo "[gate] 6/6 Compose E2E smoke"
+  (cd "$ROOT_DIR" && ./scripts/multyagents e2e) || failed=1
+
+  echo
+  if [[ "$failed" -eq 0 ]]; then
+    echo "[gate] ✅ PASS: all reliability checks passed"
+    return 0
+  fi
+  echo "[gate] ❌ FAIL: one or more reliability checks failed" >&2
+  return 1
 }
 
 cmd_desktop() {
@@ -292,7 +331,9 @@ Commands:
   status   Show process/container status and health checks
   logs     Show recent host-runner and docker logs
   e2e      Run end-to-end smoke scenario
+  stress-smoke Run parallel workflow stress smoke scenario
   readiness Run TASK-061 local readiness scenarios and evidence capture
+  gate     Run full reliability gate (api+bot+ui+smoke+readiness+e2e)
   desktop  Launch Electron desktop control panel
   help     Show this help
 
@@ -311,7 +352,9 @@ main() {
     status) cmd_status ;;
     logs) cmd_logs ;;
     e2e) cmd_e2e ;;
+    stress-smoke) cmd_stress_smoke ;;
     readiness) cmd_readiness ;;
+    gate) cmd_gate ;;
     desktop) cmd_desktop ;;
     help|-h|--help) cmd_help ;;
     *)
