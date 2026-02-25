@@ -89,4 +89,4 @@ Verification evidence:
 - `apps/ui`: `npm test` -> passed (10), `npm run build` -> passed.
 
 Commits:
-- `<final-sha>`
+- `cb4c5bf`
