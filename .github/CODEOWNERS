@@ -1,0 +1,10 @@
+# Default owners
+* @rvpalivoda
+
+# Service ownership
+/apps/api/ @rvpalivoda
+/apps/host-runner/ @rvpalivoda
+/apps/telegram-bot/ @rvpalivoda
+/apps/ui/ @rvpalivoda
+/packages/contracts/ @rvpalivoda
+/docs/ @rvpalivoda
